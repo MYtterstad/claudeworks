@@ -101,13 +101,21 @@ Imagine a delivery driver who needs to visit 20 towns and return home. Which ord
 
 For n cities, the number of distinct circular tours is (n-1)!/2. This grows super-exponentially: 10 cities = 181,440 tours; 20 cities ≈ 6.1 × 10¹⁶ tours. TSP is NP-hard — no known polynomial-time algorithm finds the optimal solution for all instances.
 
+**State of the Art: Concorde and LKH**
+
+Despite TSP being NP-hard, modern solvers perform far better than naive approaches. The Concorde solver (Applegate, Bixby, Chvátal & Cook) uses branch-and-cut — an integer linear programming approach that formulates the tour as a 0/1 variable for each edge, relaxes to a continuous LP, solves it, then generates cutting planes (subtour elimination constraints, comb inequalities, Chvátal-Gomory cuts) to tighten the relaxation. This has solved instances with up to 85,900 cities to proven optimality. Concorde is roughly 130,000 lines of C and represents decades of research — it is not something that can be reimplemented in a browser app.
+
+On the heuristic side, the Lin-Kernighan-Helsgaun (LKH) algorithm is the gold standard. The original Lin-Kernighan (1973) performs variable-depth edge exchanges: starting from a tour, it removes one edge, reconnects the tour differently, then checks if removing a second edge yields further improvement, continuing as long as gains are found. Helsgaun's extension uses 5-opt moves, alpha-nearness candidate lists (derived from minimum spanning trees), and sophisticated backtracking. LKH routinely finds solutions within 0.5–2% of optimal for instances with millions of cities.
+
+The solvers in this app — our genetic algorithm, branch-and-bound, and mutation operators — are educational implementations that illustrate the core ideas. They are not competitive with Concorde or LKH on large instances, but they make the concepts visible and interactive.
+
 **Ordered Crossover (OX)**
 
 Given parents P1 and P2, select a random substring from P1. Copy it to the child at the same positions. Fill remaining positions with cities from P2 in their relative order, skipping those already placed. This preserves absolute position from P1 and relative ordering from P2.
 
 **2-opt Mutation**
 
-For edges (i,i+1) and (j,j+1), reversing the segment [i+1..j] replaces these two edges with (i,j) and (i+1,j+1). Accept only if: d(i,j) + d(i+1,j+1) < d(i,i+1) + d(j,j+1). This resolves any crossing, since two crossing edges always have a shorter non-crossing alternative (triangle inequality).
+For edges (i,i+1) and (j,j+1), reversing the segment [i+1..j] replaces these two edges with (i,j) and (i+1,j+1). Accept only if: d(i,j) + d(i+1,j+1) < d(i,i+1) + d(j,j+1). This resolves any crossing, since two crossing edges always have a shorter non-crossing alternative (triangle inequality). This is a single step of what Lin-Kernighan generalizes to variable depth — our GA applies 2-opt as a random mutation, whereas LK uses it as a systematic local search.
 
 **Edge Similarity**
 
@@ -115,7 +123,7 @@ Two routes are compared by their edge sets. Each route defines n edges (unordere
 
 **Branch-and-Bound**
 
-DFS through the permutation tree, maintaining a running path cost. At each node, if current_cost ≥ best_known, prune the entire subtree. This dramatically reduces the search space but worst-case is still O(n!). The implementation processes nodes in batches and yields to the browser between batches for UI responsiveness.
+Our exact solver uses DFS through the permutation tree, maintaining a running path cost. At each node, if current_cost ≥ best_known, prune the entire subtree. This is the simplest exact approach and scales to roughly 20 cities. By contrast, Concorde's branch-and-cut uses LP relaxations for much tighter lower bounds, enabling it to prune vastly more of the search tree and handle thousands of cities.
 
 **Diversity-Enforced Elitism**
 
