@@ -8,14 +8,13 @@ export default function AppCard({ app }) {
         background: 'var(--bg-card)',
         border: '1px solid var(--border)',
         borderRadius: 16,
-        padding: 24,
         textDecoration: 'none',
         color: 'inherit',
         transition: 'all 0.3s ease',
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
         cursor: 'pointer',
+        overflow: 'hidden',
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.borderColor = 'var(--border-hover)'
@@ -28,63 +27,109 @@ export default function AppCard({ app }) {
         e.currentTarget.style.boxShadow = 'none'
       }}
     >
-      {/* Icon / emoji area */}
-      <div style={{
-        fontSize: 36,
-        lineHeight: 1,
-        marginBottom: 4,
-      }}>
-        {app.icon}
-      </div>
-
-      <h3 style={{
-        fontSize: 18,
-        fontWeight: 700,
-        color: 'var(--text-primary)',
-        margin: 0,
-      }}>
-        {app.title}
-      </h3>
-
-      <p style={{
-        fontSize: 14,
-        color: 'var(--text-secondary)',
-        lineHeight: 1.5,
-        margin: 0,
-        flex: 1,
-      }}>
-        {app.summary}
-      </p>
-
-      {/* Tags */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-        {app.tags.map((tag) => (
-          <span
-            key={tag}
+      {/* Preview image */}
+      {app.preview ? (
+        <div style={{
+          width: '100%',
+          height: 160,
+          background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border)',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <img
+            src={app.preview}
+            alt={`${app.title} preview`}
             style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: '3px 10px',
-              borderRadius: 20,
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-muted)',
-              border: '1px solid var(--border)',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
             }}
-          >
-            {tag}
-          </span>
-        ))}
-      </div>
+          />
+        </div>
+      ) : (
+        <div style={{
+          width: '100%',
+          height: 100,
+          background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 48,
+        }}>
+          {app.icon}
+        </div>
+      )}
 
-      <div style={{
-        fontSize: 12,
-        color: 'var(--text-muted)',
-        fontFamily: "'JetBrains Mono', monospace",
-        marginTop: 4,
-      }}>
-        v{app.version}
+      {/* Card body */}
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 22 }}>{app.icon}</span>
+          <h3 style={{
+            fontSize: 17,
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+            margin: 0,
+          }}>
+            {app.title}
+          </h3>
+        </div>
+
+        {app.category && (
+          <span style={{
+            fontSize: 11,
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: 1,
+            color: 'var(--accent-purple)',
+          }}>
+            {app.category}
+          </span>
+        )}
+
+        <p style={{
+          fontSize: 14,
+          color: 'var(--text-secondary)',
+          lineHeight: 1.5,
+          margin: 0,
+          flex: 1,
+        }}>
+          {app.summary}
+        </p>
+
+        {/* Tags */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+          {app.tags.map((tag) => (
+            <span
+              key={tag}
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                padding: '3px 10px',
+                borderRadius: 20,
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+
+        <div style={{
+          fontSize: 12,
+          color: 'var(--text-muted)',
+          fontFamily: "'JetBrains Mono', monospace",
+          marginTop: 2,
+        }}>
+          v{app.version}
+        </div>
       </div>
     </Link>
   )
