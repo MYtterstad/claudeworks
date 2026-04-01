@@ -689,8 +689,10 @@ export default function AntColony() {
   const [selectedObstacle, setSelectedObstacle] = useState(null)
   const [selectedAnt, setSelectedAnt] = useState(null)
   const [tick, setTick] = useState(0)
-  const [controlsOpen, setControlsOpen] = useState(true)
+  const [controlTab, setControlTab] = useState('controls')
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 })
+  const [layoutMode, setLayoutMode] = useState('wide') // 'wide' | 'tall'
+  const [availHeight, setAvailHeight] = useState(600)
   const containerRef = useRef(null)
 
   const cols = useMemo(() => Math.floor(canvasSize.w / CELL), [canvasSize.w])
@@ -708,28 +710,38 @@ export default function AntColony() {
   }, [cols, rows, antCount, canvasSize])
 
   useEffect(() => {
-    const computeSize = () => {
-      const containerW = containerRef.current ? containerRef.current.clientWidth : 0
-      const availW = containerW > 100 ? containerW : window.innerWidth - 48
-      const isMobile = window.innerWidth < 640
-      const aspect = isMobile ? 1.1 : 1.6
-      // Width always fills container — height follows from aspect, capped independently
-      let w = availW
-      let h = Math.floor(w / aspect)
-      const maxH = Math.min(window.innerHeight * 0.75, 900)
-      if (h > maxH) h = maxH
-      // Don't shrink width to match capped height — keep it full width
-      w = Math.floor(w / CELL) * CELL; h = Math.floor(h / CELL) * CELL
+    const computeLayout = () => {
+      const ww = window.innerWidth, wh = window.innerHeight
+      const containerW = containerRef.current ? containerRef.current.clientWidth : ww - 48
+      const availW = containerW > 100 ? containerW : ww - 48
+      // Estimate available height: viewport minus header (~72px) minus AppPage padding (~48px top/bottom)
+      const aH = wh - 120
+      setAvailHeight(aH)
+
+      const aspectRatio = ww / wh
+      const mode = aspectRatio > 1.2 ? 'wide' : 'tall'
+      setLayoutMode(mode)
+
+      let w, h
+      if (mode === 'wide') {
+        // Canvas gets ~63% of width, full available height
+        w = Math.floor(availW * 0.63)
+        h = aH - 8 // leave a small gap
+      } else {
+        // Canvas gets full width, ~55% of available height
+        w = availW
+        h = Math.floor(aH * 0.55)
+      }
+      w = Math.max(Math.floor(w / CELL) * CELL, CELL * 40)
+      h = Math.max(Math.floor(h / CELL) * CELL, CELL * 30)
       return { w, h }
     }
     const handleResize = () => {
-      const size = computeSize()
+      const size = computeLayout()
       setCanvasSize(prev => (prev.w === size.w && prev.h === size.h) ? prev : size)
     }
-    // Measure after layout: try immediately, then again after a frame
     handleResize()
     const raf = requestAnimationFrame(handleResize)
-    // And once more after a short delay for slow layouts
     const timer = setTimeout(handleResize, 200)
     window.addEventListener('resize', handleResize)
     const ro = window.ResizeObserver ? new ResizeObserver(handleResize) : null
@@ -889,143 +901,227 @@ export default function AntColony() {
     else sim.ants.length = n
   }
 
-  const btnBase = {
-    padding: '8px 16px', fontSize: 13, fontWeight: 600,
-    border: '1px solid #C9C0B0', borderRadius: 8, cursor: 'pointer',
-    background: '#F0EDE5', color: '#5C4E3A', fontFamily: "'Inter', sans-serif",
-    transition: 'all 0.15s',
-  }
-  const btnAccent = (bg, fg) => ({ ...btnBase, background: bg, color: fg, borderColor: bg })
-  const panelStyle = { background: '#F8F6F0', border: '1px solid #D9D3C7', borderRadius: 12, padding: 16 }
-  const labelStyle = { fontSize: 12, fontWeight: 600, color: '#6B5E4E', marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }
-  const valStyle = { color: '#3A3020', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }
-  const sliderStyle = { width: '100%', accentColor: '#8B7355', cursor: 'pointer' }
-  const isMobile = canvasSize.w < 580
   const sim = simRef.current
+  const isWide = layoutMode === 'wide'
 
-  return (
-    <div ref={containerRef} style={{ fontFamily: "'Inter', -apple-system, sans-serif", color: '#3A3020', width: '100%' }}>
-      {/* Canvas + overlays */}
-      <div style={{ position: 'relative', marginBottom: 12, display: 'inline-block' }}>
-        <canvas
-          ref={canvasRef}
-          width={canvasSize.w} height={canvasSize.h}
-          style={{
-            width: canvasSize.w, height: canvasSize.h, borderRadius: 12,
-            border: editMode ? '2px solid #E85D75' : '1px solid #C9C0B0',
-            cursor: editMode ? 'crosshair' : (!running ? 'pointer' : 'default'),
-            touchAction: editMode ? 'none' : 'auto',
-            display: 'block', boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-          }}
-          onClick={handleCanvasClick}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
-        />
+  // ── Shared styles ──
+  const btnSm = {
+    padding: '5px 12px', fontSize: 11, fontWeight: 600,
+    border: '1px solid #C9C0B0', borderRadius: 6, cursor: 'pointer',
+    background: '#F0EDE5', color: '#5C4E3A', fontFamily: "'Inter', sans-serif",
+  }
+  const btnAccSm = (bg, fg) => ({ ...btnSm, background: bg, color: fg, borderColor: bg })
+  const lblSt = { fontSize: 11, fontWeight: 600, color: '#6B5E4E', display: 'flex', justifyContent: 'space-between', marginBottom: 2 }
+  const valSt = { color: '#3A3020', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 11 }
+  const slSt = { width: '100%', accentColor: '#8B7355', cursor: 'pointer', margin: '2px 0 6px' }
+  const tabBtnSt = (active) => ({
+    flex: 1, padding: '6px 0', fontSize: 11, fontWeight: 600, textAlign: 'center',
+    border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+    borderBottom: active ? '2px solid #6B4E30' : '2px solid transparent',
+    background: 'transparent', color: active ? '#3A3020' : '#8B7E6E',
+  })
 
-        <button
-          onClick={() => { setEditMode(m => !m); setPlacingType(null); setSelectedObstacle(null); setSelectedAnt(null) }}
-          style={{
-            position: 'absolute', top: editMode ? 'auto' : 8, bottom: editMode ? 8 : 'auto', right: 8,
-            ...btnBase, fontSize: 12, padding: '5px 12px',
-            background: editMode ? '#E85D75' : 'rgba(255,255,245,0.9)',
-            color: editMode ? '#fff' : '#5C4E3A', borderColor: editMode ? '#E85D75' : '#C9C0B0',
-          }}
-        >
-          {editMode ? 'Done' : 'Edit Map'}
-        </button>
-
-        {!editMode && (
-          <span style={{
-            position: 'absolute', bottom: 8, left: 8,
-            fontSize: 11, color: '#5C4E3A', fontFamily: "'JetBrains Mono', monospace",
-            background: 'rgba(255,255,245,0.85)', padding: '3px 8px', borderRadius: 6,
-            border: '1px solid rgba(0,0,0,0.08)',
-          }}>
-            tick {tick}
-          </span>
-        )}
-
-        {selectedAnt && !running && sim && (
-          <AntInspector
-            ant={selectedAnt} grid={sim.grid} foods={sim.foods}
-            nestX={sim.nestX} nestY={sim.nestY} params={{ alpha, beta }}
-            onClose={() => setSelectedAnt(null)}
-          />
-        )}
-
-        {!running && !editMode && !selectedAnt && tick > 0 && (
-          <span style={{
-            position: 'absolute', bottom: 8, right: 80,
-            fontSize: 11, color: '#8B7E6E',
-            background: 'rgba(255,255,245,0.85)', padding: '3px 8px', borderRadius: 6,
-            border: '1px solid rgba(0,0,0,0.08)',
-          }}>
-            Click an ant to inspect
-          </span>
-        )}
-      </div>
-
-      {/* Transport + Legend row */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={handleStartStop} style={running ? btnAccent('#C94040', '#fff') : btnAccent('#4A8C5C', '#fff')}>
+  // ── Canvas block (shared between both layouts) ──
+  const canvasBlock = (
+    <div style={{ position: 'relative' }}>
+      <canvas
+        ref={canvasRef}
+        width={canvasSize.w} height={canvasSize.h}
+        style={{
+          width: canvasSize.w, height: canvasSize.h, borderRadius: 10,
+          border: editMode ? '2px solid #E85D75' : '1px solid #C9C0B0',
+          cursor: editMode ? 'crosshair' : (!running ? 'pointer' : 'default'),
+          touchAction: editMode ? 'none' : 'auto',
+          display: 'block',
+        }}
+        onClick={handleCanvasClick}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+      />
+      {/* Transport overlay — top-left of canvas */}
+      <div style={{ position: 'absolute', top: 6, left: 6, display: 'flex', gap: 4 }}>
+        <button onClick={handleStartStop} style={running ? btnAccSm('#C94040', '#fff') : btnAccSm('#4A8C5C', '#fff')}>
           {running ? 'Pause' : 'Start'}
         </button>
-        <button onClick={handleReset} style={btnBase}>Reset</button>
-        <button onClick={handleNewMap} style={btnBase}>New Map</button>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: '#8B7E6E', marginLeft: 8, alignItems: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#1A0F0A', borderRadius: 5 }} />Foraging{sim ? `: ${sim.ants.filter(a => a.state === 'foraging').length}` : ''}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: '#5C3D1A', borderRadius: 5 }} />Carrying{sim ? `: ${sim.ants.filter(a => a.state !== 'foraging').length}` : ''}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(180,140,50,0.5)', borderRadius: 2 }} />Food trail
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ display: 'inline-block', width: 10, height: 10, background: 'rgba(80,80,180,0.4)', borderRadius: 2 }} />Home trail
-          </span>
-          {sim && <span style={{ color: '#6B4E30', fontWeight: 600 }}>Collected: {sim.foods.reduce((s, f) => s + (f.maxQuantity - f.quantity), 0)}</span>}
-        </div>
+        <button onClick={handleReset} style={btnSm}>Reset</button>
+        <button onClick={handleNewMap} style={btnSm}>New Map</button>
       </div>
-
-      {/* Controls — collapsible */}
-      <button onClick={() => setControlsOpen(c => !c)} style={{ ...btnBase, width: '100%', marginBottom: controlsOpen ? 12 : 0, textAlign: 'center' }}>
-        {controlsOpen ? 'Hide Controls' : 'Show Controls'}
+      {/* Edit button — top-right */}
+      <button
+        onClick={() => { setEditMode(m => !m); setPlacingType(null); setSelectedObstacle(null); setSelectedAnt(null) }}
+        style={{
+          position: 'absolute', top: editMode ? 'auto' : 6, bottom: editMode ? 6 : 'auto', right: 6,
+          ...btnSm, background: editMode ? '#E85D75' : 'rgba(255,255,245,0.9)',
+          color: editMode ? '#fff' : '#5C4E3A', borderColor: editMode ? '#E85D75' : '#C9C0B0',
+        }}
+      >
+        {editMode ? 'Done' : 'Edit'}
       </button>
-
-      {controlsOpen && (
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 12, marginTop: 12 }}>
-          <div style={panelStyle}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#6B4E30', marginBottom: 12 }}>Colony</div>
-            <div style={labelStyle}><span>Ants</span><span style={valStyle}>{antCount}</span></div>
-            <input type="range" min={10} max={200} step={5} value={antCount} onChange={e => handleAntCountChange(+e.target.value)} style={sliderStyle} />
-            <div style={{ ...labelStyle, marginTop: 12 }}><span>Speed</span><span style={valStyle}>{speed.toFixed(2)}</span></div>
-            <input type="range" min={0.02} max={1} step={0.02} value={speed} onChange={e => setSpeed(+e.target.value)} style={sliderStyle} />
-          </div>
-          <div style={panelStyle}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#4A8C5C', marginBottom: 12 }}>Pheromone</div>
-            <div style={labelStyle}><span>α (trail importance)</span><span style={valStyle}>{alpha.toFixed(1)}</span></div>
-            <input type="range" min={0} max={5} step={0.1} value={alpha} onChange={e => setAlpha(+e.target.value)} style={sliderStyle} />
-            <div style={{ ...labelStyle, marginTop: 12 }}><span>β (direction weight)</span><span style={valStyle}>{beta.toFixed(1)}</span></div>
-            <input type="range" min={0} max={8} step={0.1} value={beta} onChange={e => setBeta(+e.target.value)} style={sliderStyle} />
-          </div>
-          <div style={panelStyle}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#B8862D', marginBottom: 12 }}>Evaporation</div>
-            <div style={labelStyle}><span>ρ (decay rate)</span><span style={valStyle}>{rho.toFixed(3)}</span></div>
-            <input type="range" min={0.001} max={0.1} step={0.001} value={rho} onChange={e => setRho(+e.target.value)} style={sliderStyle} />
-          </div>
+      {/* Status overlay — bottom-left */}
+      {!editMode && (
+        <div style={{
+          position: 'absolute', bottom: 6, left: 6,
+          fontSize: 10, color: '#5C4E3A', fontFamily: "'JetBrains Mono', monospace",
+          background: 'rgba(255,255,245,0.85)', padding: '3px 8px', borderRadius: 5,
+          display: 'flex', gap: 10, alignItems: 'center',
+        }}>
+          <span>t:{tick}</span>
+          {sim && <>
+            <span><b style={{ color: '#1A0F0A' }}>{sim.ants.filter(a => a.state === 'foraging').length}</b> foraging</span>
+            <span><b style={{ color: '#5C3D1A' }}>{sim.ants.filter(a => a.state !== 'foraging').length}</b> carrying</span>
+            <span><b style={{ color: '#6B4E30' }}>{sim.foods.reduce((s, f) => s + (f.maxQuantity - f.quantity), 0)}</b> collected</span>
+          </>}
         </div>
       )}
-
-      {/* Math & Stats — always visible */}
-      {sim && (
-        <div style={{ marginTop: 12 }}>
-          <MathPanel grid={sim.grid} ants={sim.ants} foods={sim.foods} alpha={alpha} beta={beta} rho={rho} tick={tick} />
-        </div>
+      {/* Ant inspector */}
+      {selectedAnt && !running && sim && (
+        <AntInspector
+          ant={selectedAnt} grid={sim.grid} foods={sim.foods}
+          nestX={sim.nestX} nestY={sim.nestY} params={{ alpha, beta }}
+          onClose={() => setSelectedAnt(null)}
+        />
       )}
+      {!running && !editMode && !selectedAnt && tick > 0 && (
+        <span style={{
+          position: 'absolute', bottom: 6, right: 70,
+          fontSize: 10, color: '#8B7E6E',
+          background: 'rgba(255,255,245,0.85)', padding: '2px 8px', borderRadius: 5,
+        }}>
+          Click an ant to inspect
+        </span>
+      )}
+    </div>
+  )
+
+  // ── Compact sliders block ──
+  const slidersBlock = (
+    <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr' : '1fr 1fr', gap: isWide ? '0' : '0 12px' }}>
+      <div>
+        <div style={lblSt}><span>Ants</span><span style={valSt}>{antCount}</span></div>
+        <input type="range" min={10} max={200} step={5} value={antCount} onChange={e => handleAntCountChange(+e.target.value)} style={slSt} />
+      </div>
+      <div>
+        <div style={lblSt}><span>Speed</span><span style={valSt}>{speed.toFixed(2)}</span></div>
+        <input type="range" min={0.02} max={1} step={0.02} value={speed} onChange={e => setSpeed(+e.target.value)} style={slSt} />
+      </div>
+      <div>
+        <div style={lblSt}><span>α trail importance</span><span style={valSt}>{alpha.toFixed(1)}</span></div>
+        <input type="range" min={0} max={5} step={0.1} value={alpha} onChange={e => setAlpha(+e.target.value)} style={slSt} />
+      </div>
+      <div>
+        <div style={lblSt}><span>β direction weight</span><span style={valSt}>{beta.toFixed(1)}</span></div>
+        <input type="range" min={0} max={8} step={0.1} value={beta} onChange={e => setBeta(+e.target.value)} style={slSt} />
+      </div>
+      <div>
+        <div style={lblSt}><span>ρ evaporation</span><span style={valSt}>{rho.toFixed(3)}</span></div>
+        <input type="range" min={0.001} max={0.1} step={0.001} value={rho} onChange={e => setRho(+e.target.value)} style={slSt} />
+      </div>
+    </div>
+  )
+
+  // ── Math block (compact) ──
+  const mathBlock = sim ? (
+    <div style={{ fontSize: 11, color: '#5C4E3A', lineHeight: 1.5 }}>
+      <div style={{
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#3A3020',
+        background: '#F0EDE5', padding: '6px 10px', borderRadius: 6, marginBottom: 6,
+        border: '1px solid #E8E2D8',
+      }}>
+        P(i→j) = τ<sup>{alpha.toFixed(1)}</sup> × η<sup>{beta.toFixed(1)}</sup> / Σ
+      </div>
+      <div>
+        <span style={{ color: '#8B7E6E' }}>α={alpha.toFixed(1)}</span> → {alpha < 1 ? 'low trail' : alpha < 2 ? 'balanced' : 'strong trail'} ·
+        <span style={{ color: '#8B7E6E' }}> β={beta.toFixed(1)}</span> → {beta < 1.5 ? 'weak direction' : beta < 4 ? 'moderate' : 'strong greedy'} ·
+        <span style={{ color: '#8B7E6E' }}> ρ={rho.toFixed(3)}</span> → t½≈{Math.round(Math.log(0.5)/Math.log(1-rho))}
+      </div>
+    </div>
+  ) : null
+
+  // ── Stats block (compact) ──
+  const statsBlock = sim ? (() => {
+    const collected = sim.foods.reduce((s, f) => s + (f.maxQuantity - f.quantity), 0)
+    const rate = tick > 0 ? (collected / tick * 60).toFixed(1) : '0.0'
+    const trips = sim.ants.reduce((s, a) => s + a.trips, 0)
+    const best = Math.max(...sim.ants.map(a => a.trips))
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px', fontSize: 11, lineHeight: 1.6 }}>
+        <span style={{ color: '#8B7E6E' }}>Collected</span><span style={{ fontWeight: 600 }}>{collected}</span>
+        <span style={{ color: '#8B7E6E' }}>Rate</span><span style={{ fontWeight: 600 }}>{rate}/min</span>
+        <span style={{ color: '#8B7E6E' }}>Total trips</span><span style={{ fontWeight: 600 }}>{trips}</span>
+        <span style={{ color: '#8B7E6E' }}>Best forager</span><span style={{ fontWeight: 600 }}>{best} trips</span>
+      </div>
+    )
+  })() : null
+
+  // ── Side panel for wide mode ──
+  const sidePanel = (
+    <div style={{
+      flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10,
+      background: '#F8F6F0', border: '1px solid #D9D3C7', borderRadius: 10, padding: 12,
+      overflow: 'auto', maxHeight: availHeight - 8,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#6B4E30', borderBottom: '1px solid #E8E2D8', paddingBottom: 6 }}>Controls</div>
+      {slidersBlock}
+      {mathBlock && (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#4A8C5C', borderBottom: '1px solid #E8E2D8', paddingBottom: 6, marginTop: 4 }}>Formula</div>
+          {mathBlock}
+        </>
+      )}
+      {statsBlock && (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#B8862D', borderBottom: '1px solid #E8E2D8', paddingBottom: 6, marginTop: 4 }}>Colony Stats</div>
+          {statsBlock}
+        </>
+      )}
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10, color: '#8B7E6E', marginTop: 4 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ width: 8, height: 8, background: 'rgba(180,140,50,0.5)', borderRadius: 2, display: 'inline-block' }} />Food trail
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ width: 8, height: 8, background: 'rgba(80,80,180,0.4)', borderRadius: 2, display: 'inline-block' }} />Home trail
+        </span>
+      </div>
+    </div>
+  )
+
+  // ── Bottom panel for tall mode (tabbed) ──
+  const bottomPanel = (
+    <div style={{
+      flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column',
+      background: '#F8F6F0', border: '1px solid #D9D3C7', borderRadius: 10,
+      overflow: 'hidden',
+    }}>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', borderBottom: '1px solid #D9D3C7' }}>
+        <button style={tabBtnSt(controlTab === 'controls')} onClick={() => setControlTab('controls')}>Controls</button>
+        <button style={tabBtnSt(controlTab === 'math')} onClick={() => setControlTab('math')}>Math</button>
+        <button style={tabBtnSt(controlTab === 'stats')} onClick={() => setControlTab('stats')}>Stats</button>
+      </div>
+      {/* Tab content */}
+      <div style={{ padding: '8px 12px', overflow: 'auto', flex: 1 }}>
+        {controlTab === 'controls' && slidersBlock}
+        {controlTab === 'math' && mathBlock}
+        {controlTab === 'stats' && statsBlock}
+      </div>
+    </div>
+  )
+
+  return (
+    <div ref={containerRef} style={{
+      fontFamily: "'Inter', -apple-system, sans-serif", color: '#3A3020', width: '100%',
+      height: availHeight, display: 'flex', flexDirection: isWide ? 'row' : 'column',
+      gap: 8, overflow: 'hidden',
+    }}>
+      {/* Canvas area */}
+      <div style={{ flex: '0 0 auto' }}>
+        {canvasBlock}
+      </div>
+      {/* Controls panel */}
+      {isWide ? sidePanel : bottomPanel}
     </div>
   )
 }
