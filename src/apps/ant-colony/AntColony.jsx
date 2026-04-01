@@ -710,8 +710,8 @@ export default function AntColony() {
   useEffect(() => {
     const handleResize = () => {
       const containerW = containerRef.current ? containerRef.current.clientWidth : window.innerWidth - 32
-      const maxW = containerW
-      const maxH = Math.min(window.innerHeight * 0.6, 700)
+      const maxW = Math.max(containerW, 300)
+      const maxH = Math.min(window.innerHeight * 0.7, 800)
       const isMobile = window.innerWidth < 640
       const aspect = isMobile ? 1.1 : 1.6
       let w = maxW, h = Math.floor(w / aspect)
@@ -719,11 +719,11 @@ export default function AntColony() {
       w = Math.floor(w/CELL)*CELL; h = Math.floor(h/CELL)*CELL
       setCanvasSize({ w, h })
     }
-    handleResize()
+    // Delay initial measure to ensure container has laid out
+    requestAnimationFrame(handleResize)
     window.addEventListener('resize', handleResize)
     // Also observe container size changes
-    const ro = containerRef.current && window.ResizeObserver
-      ? new ResizeObserver(handleResize) : null
+    const ro = window.ResizeObserver ? new ResizeObserver(handleResize) : null
     if (ro && containerRef.current) ro.observe(containerRef.current)
     return () => {
       window.removeEventListener('resize', handleResize)
