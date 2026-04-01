@@ -710,13 +710,15 @@ export default function AntColony() {
   useEffect(() => {
     const computeSize = () => {
       const containerW = containerRef.current ? containerRef.current.clientWidth : 0
-      // Fall back to window width if container hasn't laid out yet
       const availW = containerW > 100 ? containerW : window.innerWidth - 48
-      const maxH = Math.min(window.innerHeight * 0.7, 800)
       const isMobile = window.innerWidth < 640
       const aspect = isMobile ? 1.1 : 1.6
-      let w = availW, h = Math.floor(w / aspect)
-      if (h > maxH) { h = maxH; w = Math.floor(h * aspect) }
+      // Width always fills container — height follows from aspect, capped independently
+      let w = availW
+      let h = Math.floor(w / aspect)
+      const maxH = Math.min(window.innerHeight * 0.75, 900)
+      if (h > maxH) h = maxH
+      // Don't shrink width to match capped height — keep it full width
       w = Math.floor(w / CELL) * CELL; h = Math.floor(h / CELL) * CELL
       return { w, h }
     }
