@@ -708,25 +708,34 @@ export default function AntColony() {
   }, [cols, rows, antCount, canvasSize])
 
   useEffect(() => {
-    const handleResize = () => {
-      const containerW = containerRef.current ? containerRef.current.clientWidth : window.innerWidth - 32
-      const maxW = Math.max(containerW, 300)
+    const computeSize = () => {
+      const containerW = containerRef.current ? containerRef.current.clientWidth : 0
+      // Fall back to window width if container hasn't laid out yet
+      const availW = containerW > 100 ? containerW : window.innerWidth - 48
       const maxH = Math.min(window.innerHeight * 0.7, 800)
       const isMobile = window.innerWidth < 640
       const aspect = isMobile ? 1.1 : 1.6
-      let w = maxW, h = Math.floor(w / aspect)
+      let w = availW, h = Math.floor(w / aspect)
       if (h > maxH) { h = maxH; w = Math.floor(h * aspect) }
-      w = Math.floor(w/CELL)*CELL; h = Math.floor(h/CELL)*CELL
-      setCanvasSize({ w, h })
+      w = Math.floor(w / CELL) * CELL; h = Math.floor(h / CELL) * CELL
+      return { w, h }
     }
-    // Delay initial measure to ensure container has laid out
-    requestAnimationFrame(handleResize)
+    const handleResize = () => {
+      const size = computeSize()
+      setCanvasSize(prev => (prev.w === size.w && prev.h === size.h) ? prev : size)
+    }
+    // Measure after layout: try immediately, then again after a frame
+    handleResize()
+    const raf = requestAnimationFrame(handleResize)
+    // And once more after a short delay for slow layouts
+    const timer = setTimeout(handleResize, 200)
     window.addEventListener('resize', handleResize)
-    // Also observe container size changes
     const ro = window.ResizeObserver ? new ResizeObserver(handleResize) : null
     if (ro && containerRef.current) ro.observe(containerRef.current)
     return () => {
       window.removeEventListener('resize', handleResize)
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
       if (ro) ro.disconnect()
     }
   }, [])
