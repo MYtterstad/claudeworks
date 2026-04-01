@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="#0a0a1a"/>
+  <!-- Stars -->
+  <circle cx="45" cy="23" r="0.8" fill="#fff" opacity="0.6"/>
+  <circle cx="120" cy="45" r="0.5" fill="#fff" opacity="0.4"/>
+  <circle cx="210" cy="15" r="0.7" fill="#fff" opacity="0.5"/>
+  <circle cx="305" cy="38" r="0.6" fill="#fff" opacity="0.7"/>
+  <circle cx="370" cy="62" r="0.5" fill="#fff" opacity="0.3"/>
+  <circle cx="80" cy="85" r="0.4" fill="#fff" opacity="0.5"/>
+  <circle cx="155" cy="110" r="0.7" fill="#fff" opacity="0.4"/>
+  <circle cx="340" cy="95" r="0.6" fill="#fff" opacity="0.6"/>
+  <circle cx="25" cy="160" r="0.5" fill="#fff" opacity="0.5"/>
+  <circle cx="280" cy="180" r="0.8" fill="#fff" opacity="0.3"/>
+  <circle cx="60" cy="230" r="0.6" fill="#fff" opacity="0.4"/>
+  <circle cx="320" cy="240" r="0.5" fill="#fff" opacity="0.6"/>
+  <circle cx="175" cy="265" r="0.7" fill="#fff" opacity="0.5"/>
+  <circle cx="390" cy="200" r="0.4" fill="#fff" opacity="0.4"/>
+  <circle cx="15" cy="280" r="0.6" fill="#fff" opacity="0.3"/>
+  <circle cx="245" cy="55" r="0.5" fill="#fff" opacity="0.5"/>
+  <circle cx="100" cy="195" r="0.4" fill="#fff" opacity="0.6"/>
+  <circle cx="350" cy="155" r="0.7" fill="#fff" opacity="0.4"/>
+
+  <defs>
+    <!-- Sun glow -->
+    <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff8e1" stop-opacity="0.4"/>
+      <stop offset="40%" stop-color="#ffeb3b" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffeb3b" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Sun core -->
+    <radialGradient id="sunCore" cx="40%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#fffde7"/>
+      <stop offset="40%" stop-color="#ffee58"/>
+      <stop offset="80%" stop-color="#fbc02d"/>
+      <stop offset="100%" stop-color="#f57f17"/>
+    </radialGradient>
+    <!-- Blue planet -->
+    <radialGradient id="planetBlue" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#90caf9"/>
+      <stop offset="50%" stop-color="#1565c0"/>
+      <stop offset="100%" stop-color="#0d47a1"/>
+    </radialGradient>
+    <!-- Red planet -->
+    <radialGradient id="planetRed" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#ef9a9a"/>
+      <stop offset="50%" stop-color="#c62828"/>
+      <stop offset="100%" stop-color="#8e0000"/>
+    </radialGradient>
+    <!-- Green planet -->
+    <radialGradient id="planetGreen" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#a5d6a7"/>
+      <stop offset="50%" stop-color="#2e7d32"/>
+      <stop offset="100%" stop-color="#1b5e20"/>
+    </radialGradient>
+    <!-- Purple planet -->
+    <radialGradient id="planetPurple" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#ce93d8"/>
+      <stop offset="50%" stop-color="#6a1b9a"/>
+      <stop offset="100%" stop-color="#4a148c"/>
+    </radialGradient>
+    <!-- Orange planet -->
+    <radialGradient id="planetOrange" cx="35%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#ffcc80"/>
+      <stop offset="50%" stop-color="#e65100"/>
+      <stop offset="100%" stop-color="#bf360c"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Orbital trails -->
+  <ellipse cx="190" cy="145" rx="120" ry="55" fill="none" stroke="#1565c0" stroke-width="1" opacity="0.25" stroke-dasharray="4,3"/>
+  <ellipse cx="190" cy="145" rx="80" ry="35" fill="none" stroke="#c62828" stroke-width="1" opacity="0.25" stroke-dasharray="4,3"/>
+  <ellipse cx="190" cy="145" rx="160" ry="72" fill="none" stroke="#2e7d32" stroke-width="1" opacity="0.2" stroke-dasharray="4,3"/>
+
+  <!-- Force line examples (amber) -->
+  <line x1="190" y1="140" x2="310" y2="130" stroke="#f57c00" stroke-width="0.8" opacity="0.3" stroke-dasharray="3,4"/>
+  <line x1="190" y1="140" x2="115" y2="165" stroke="#f57c00" stroke-width="1.2" opacity="0.4"/>
+  <line x1="190" y1="140" x2="70" y2="115" stroke="#f57c00" stroke-width="0.6" opacity="0.2" stroke-dasharray="2,3"/>
+
+  <!-- Sun corona glow -->
+  <circle cx="190" cy="140" r="45" fill="url(#sunGlow)"/>
+
+  <!-- Sun -->
+  <circle cx="190" cy="140" r="18" fill="url(#sunCore)"/>
+  <text x="190" y="120" text-anchor="middle" font-size="9" fill="#fff8e1" opacity="0.8" font-family="Inter, sans-serif">Helios</text>
+
+  <!-- Blue planet (right) -->
+  <circle cx="310" cy="130" r="12" fill="url(#planetBlue)"/>
+  <circle cx="310" cy="130" r="14" fill="none" stroke="#90caf9" stroke-width="0.5" opacity="0.3"/>
+  <text x="310" y="115" text-anchor="middle" font-size="8" fill="#90caf9" opacity="0.7" font-family="Inter, sans-serif">Poseidon</text>
+
+  <!-- Red planet (inner orbit) -->
+  <circle cx="115" cy="165" r="9" fill="url(#planetRed)"/>
+  <circle cx="115" cy="165" r="11" fill="none" stroke="#ef9a9a" stroke-width="0.5" opacity="0.3"/>
+  <text x="115" y="153" text-anchor="middle" font-size="8" fill="#ef9a9a" opacity="0.7" font-family="Inter, sans-serif">Arrakis</text>
+
+  <!-- Green planet (outer orbit) -->
+  <circle cx="70" cy="115" r="10" fill="url(#planetGreen)"/>
+  <circle cx="70" cy="115" r="12" fill="none" stroke="#a5d6a7" stroke-width="0.5" opacity="0.3"/>
+  <text x="70" y="103" text-anchor="middle" font-size="8" fill="#a5d6a7" opacity="0.7" font-family="Inter, sans-serif">Thessia</text>
+
+  <!-- Purple planet (small, top) -->
+  <circle cx="245" cy="80" r="6" fill="url(#planetPurple)"/>
+  <text x="245" y="71" text-anchor="middle" font-size="7" fill="#ce93d8" opacity="0.6" font-family="Inter, sans-serif">Nyx</text>
+
+  <!-- Orange planet (bottom) -->
+  <circle cx="280" cy="210" r="8" fill="url(#planetOrange)"/>
+  <text x="280" y="200" text-anchor="middle" font-size="7" fill="#ffcc80" opacity="0.6" font-family="Inter, sans-serif">Kronos</text>
+
+  <!-- Velocity vector example (cyan arrow on blue planet) -->
+  <line x1="310" y1="130" x2="325" y2="118" stroke="#00e5ff" stroke-width="1.2" opacity="0.5"/>
+  <polygon points="325,118 321,121 323,115" fill="#00e5ff" opacity="0.5"/>
+</svg>

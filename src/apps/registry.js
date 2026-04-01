@@ -6,6 +6,7 @@ import { lazy } from 'react'
 const PidTank = lazy(() => import('./pid-tank/PidTank'))
 const TspSolver = lazy(() => import('./tsp-solver/TspSolver'))
 const AntColony = lazy(() => import('./ant-colony/AntColony'))
+const GravitySim = lazy(() => import('./gravity-sim/GravitySim'))
 
 const apps = [
   {
@@ -228,6 +229,77 @@ If an ant has been in the same state (foraging or returning) for more than 300 s
 **Emergence:**
 
 No ant knows the location of food sources (until within detection range of 30 cells). No ant plans a route. Yet the colony collectively discovers and optimizes paths through positive feedback (pheromone reinforcement) balanced by negative feedback (evaporation). This is the hallmark of swarm intelligence — global optimization from purely local interactions.`,
+    },
+  },
+  {
+    id: 'gravity-sim',
+    title: 'Gravity Simulator',
+    icon: '🪐',
+    category: 'Engineering',
+    summary: 'Watch planets orbit, collide, and merge in a 3D N-body gravity simulation. Rotate the camera, place new planets, and tune the gravitational constant.',
+    description: `An interactive N-body gravity simulation rendered in 3D with perspective projection and click-drag camera control. Planets orbit a central star, pulled by the gravitational forces of every other body in the system.
+
+Features include Velocity Verlet integration for accurate energy conservation, collision detection with momentum-conserving mergers, a sun that serves as both gravitational anchor and light source (with corona glow and pulsing animation), orbital trails, velocity vectors, gravitational force lines in 5 intensity ranges, center-of-mass tracking, an energy display, and a planet inspector showing each body's gravitational influences.
+
+Two startup modes — Orbital (near-circular orbits) and Chaotic (random velocities) — let users explore stable vs. unstable configurations. Planet names are drawn from Greek/Roman mythology and classic sci-fi.`,
+    path: '/apps/gravity-sim',
+    preview: '/previews/gravity-sim.svg',
+    version: '0.1',
+    language: 'jsx',
+    tags: ['React', 'Physics', 'N-Body', 'Simulation', '3D'],
+    glowColor: 'var(--glow-blue)',
+    component: GravitySim,
+    documentation: {
+      howToUse: [
+        { title: 'Generate a system', text: 'Press "New Space" to create a new planetary system. Adjust the planet count slider before generating to control how many bodies appear.' },
+        { title: 'Watch and rotate', text: 'Press Start to begin the simulation. Click and drag on empty space to rotate the 3D camera. Horizontal drag rotates the view, vertical drag tilts it.' },
+        { title: 'Inspect a planet', text: 'Click any planet to see its name, mass, velocity, and the top gravitational forces acting on it. The selected planet\'s force lines are shown even if the global toggle is off.' },
+        { title: 'Toggle overlays', text: 'Enable Trails to see orbital paths, Velocity Vectors to see movement direction, Force Lines to visualize gravitational connections, Center of Mass to track the system\'s balance point, and Energy to monitor conservation.' },
+        { title: 'Edit the system', text: 'Press Edit to enter placement mode. Click anywhere on the canvas to add a new planet with random properties. Press Done when finished.' },
+        { title: 'Experiment', text: 'Try Orbital vs Chaotic startup modes. Increase the G multiplier to see more dramatic interactions. Watch how collisions reduce planet count over time as bodies merge.' },
+      ],
+      mathSimple: `**How does gravity work in an N-body system?**
+
+Every object with mass pulls on every other object. The force between two bodies depends on their masses and distance: double the mass = double the pull, double the distance = quarter the pull (it falls off with the square of distance).
+
+**Why do planets orbit?** A planet moving sideways past a star is constantly pulled inward by gravity, but its sideways motion keeps it from falling in. The result is a curved path — an orbit. If the speed is just right, the orbit is circular. Too slow and the planet spirals inward; too fast and it escapes.
+
+**Why do orbits become chaotic?** With two bodies, orbits are perfectly predictable (Kepler's laws). But add a third body and the math becomes unsolvable — tiny differences in starting positions lead to wildly different outcomes over time. This is the famous "three-body problem." With 15+ bodies, the system is deeply chaotic and collisions are inevitable.
+
+**What happens when planets collide?** They merge into one larger body. The merged planet conserves the total momentum (mass × velocity) of both parents, so it inherits a velocity that's a mass-weighted average of both. Its mass is the sum of both, and its radius grows as the cube root of the combined volume.`,
+      mathAdvanced: `**Velocity Verlet Integration**
+
+The standard Euler method (x += v·dt, v += a·dt) accumulates energy errors over time — orbits spiral outward or inward. Velocity Verlet is symplectic, meaning it conserves the Hamiltonian (total energy) much better:
+
+1. x(t+dt) = x(t) + v(t)·dt + ½·a(t)·dt²
+2. Compute a(t+dt) from new positions
+3. v(t+dt) = v(t) + ½·[a(t) + a(t+dt)]·dt
+
+This two-step velocity update uses the average of old and new accelerations, giving second-order accuracy and excellent long-term stability.
+
+**Gravitational Force with Softening**
+
+F_ij = G · m_i · m_j / (r² + ε²)
+
+where ε is a softening length (~5 units). Without softening, two bodies passing very close would experience near-infinite forces, causing numerical explosion. Softening caps the maximum force, mimicking the finite size of real bodies. The acceleration on body i from body j is:
+
+a_i += G · m_j · (r_j - r_i) / (|r|² + ε²)^(3/2)
+
+**Collision Detection**
+
+Bodies merge when their centers are closer than the sum of their radii: |r_i - r_j| < R_i + R_j. The merged body has:
+- Mass: M = m_i + m_j
+- Velocity: V = (m_i·v_i + m_j·v_j) / M (momentum conservation)
+- Radius: R = ∛(R_i³ + R_j³) (volume conservation)
+- Position: weighted average by mass
+
+**Orbital Velocity Setup**
+
+For roughly circular orbits, a body at distance r from the sun needs tangential speed v = √(G·M_sun/r). This balances gravitational acceleration (GM/r²) against centripetal acceleration (v²/r). We add ±15% random perturbation to create slightly elliptical, more natural-looking orbits.
+
+**Three-Body Problem**
+
+Henri Poincaré proved in 1890 that the general three-body problem has no closed-form solution. The system exhibits sensitive dependence on initial conditions — the hallmark of chaos. Karl Sundman later showed a convergent series solution exists, but it converges so slowly that it has no practical use. For N > 2, numerical integration is the only viable approach, which is exactly what this simulator does.`,
     },
   },
 ]
