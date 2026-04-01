@@ -1,15 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
-function useIsMobile(breakpoint = 640) {
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
-  useEffect(() => {
-    const handler = () => setMobile(window.innerWidth < breakpoint);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, [breakpoint]);
-  return mobile;
-}
 
 const DEFAULT_TANK_CAPACITY = 1000;
 const MAX_FLOW = 10;
@@ -45,9 +36,9 @@ function SliderWithInput({ label, value, min, max, step, onChange, color, unit =
   };
 
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div style={{ marginBottom: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <label style={{ fontSize: 13, fontWeight: 600, color: color || "#334155" }}>{label}</label>
+        <label style={{ fontSize: 12, fontWeight: 600, color: color || "#334155" }}>{label}</label>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <input
             type="text"
@@ -56,16 +47,16 @@ function SliderWithInput({ label, value, min, max, step, onChange, color, unit =
             onBlur={handleTextBlur}
             onKeyDown={handleKeyDown}
             style={{
-              width: 70,
-              padding: "2px 6px",
-              fontSize: 13,
+              width: 60,
+              padding: "2px 4px",
+              fontSize: 11,
               border: "1px solid #cbd5e1",
               borderRadius: 4,
               textAlign: "right",
               fontFamily: "monospace",
             }}
           />
-          {unit && <span style={{ fontSize: 12, color: "#64748b" }}>{unit}</span>}
+          {unit && <span style={{ fontSize: 11, color: "#64748b" }}>{unit}</span>}
         </div>
       </div>
       <input
@@ -231,7 +222,11 @@ function TankVisualization({ level, capacity, inflow, outflow, setpoint }) {
 }
 
 export default function PidTank() {
-  const isMobile = useIsMobile();
+  const containerRef = useRef(null);
+  const [layoutMode, setLayoutMode] = useState('wide');
+  const [availHeight, setAvailHeight] = useState(600);
+  const [controlTab, setControlTab] = useState('user');
+
   const [running, setRunning] = useState(false);
   const [tankCapacity, setTankCapacity] = useState(DEFAULT_TANK_CAPACITY);
   const [level, setLevel] = useState(500);
@@ -245,6 +240,32 @@ export default function PidTank() {
   const [maxSlewRate, setMaxSlewRate] = useState(2); // max outflow change per tick (L/t per tick)
   const [history, setHistory] = useState([]);
   const [time, setTime] = useState(0);
+
+  // Layout computation
+  useEffect(() => {
+    const computeLayout = () => {
+      const ww = window.innerWidth;
+      const wh = window.innerHeight;
+      const aH = wh - 120;
+      setAvailHeight(aH);
+      setLayoutMode(ww / wh > 1.2 ? 'wide' : 'tall');
+    };
+
+    computeLayout();
+    const raf = requestAnimationFrame(computeLayout);
+    const timer = setTimeout(computeLayout, 200);
+    window.addEventListener('resize', computeLayout);
+
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(computeLayout) : null;
+    if (ro && containerRef.current) ro.observe(containerRef.current);
+
+    return () => {
+      window.removeEventListener('resize', computeLayout);
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      if (ro) ro.disconnect();
+    };
+  }, []);
 
   // PID state stored in refs so the simulation loop always sees current values
   const pidState = useRef({ integral: 0, prevError: 0, prevOutflow: 5 });
@@ -367,181 +388,458 @@ export default function PidTank() {
     return () => clearInterval(interval);
   }, [running, simSpeed]);
 
+  // Computed chart height for wide mode
+  const chartHeight = layoutMode === 'wide' ? availHeight - 80 : Math.max(150, availHeight * 0.55 - 40);
+
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e293b", margin: 0 }}>
-          PID Water Tank Controller <span style={{ fontSize: 13, fontWeight: 400, color: "#94a3b8" }}>(v1.6)</span>
-        </h1>
-        <p style={{ fontSize: 13, color: "#64748b", margin: "4px 0 0" }}>
-          Adjust inflow to create disturbances. The PID controller adjusts outflow to maintain the setpoint.
-        </p>
-      </div>
-
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", flexDirection: isMobile ? "column" : "row" }}>
-        {/* Left: Tank Visualization */}
-        <div style={{
-          flex: "0 0 auto",
-          background: "#f8fafc",
-          borderRadius: 12,
-          padding: 16,
-          border: "1px solid #e2e8f0",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}>
-          <TankVisualization
-            level={level}
-            capacity={tankCapacity}
-            inflow={inflow}
-            outflow={outflow}
-            setpoint={setpoint}
-          />
-        </div>
-
-        {/* Right: Controls */}
-        <div style={{ flex: 1, minWidth: 280 }}>
-          {/* Simulation controls */}
-          <div style={{
-            display: "flex",
-            gap: 8,
-            marginBottom: 16,
-            alignItems: "center",
-          }}>
-            <button
-              onClick={() => setRunning(!running)}
-              style={{
-                padding: "8px 24px",
-                fontSize: 14,
-                fontWeight: 600,
-                border: "none",
-                borderRadius: 8,
-                cursor: "pointer",
-                background: running ? "#ef4444" : "#22c55e",
-                color: "white",
-                transition: "background 0.2s",
-              }}
-            >
-              {running ? "⏸ Pause" : "▶ Start"}
-            </button>
-            <button
-              onClick={reset}
-              style={{
-                padding: "8px 16px",
-                fontSize: 14,
-                fontWeight: 600,
-                border: "1px solid #cbd5e1",
-                borderRadius: 8,
-                cursor: "pointer",
-                background: "white",
-                color: "#475569",
-              }}
-            >
-              Reset
-            </button>
-            <button
-              onClick={autoTune}
-              style={{
-                padding: "8px 16px",
-                fontSize: 14,
-                fontWeight: 600,
-                border: "1px solid #fbbf24",
-                borderRadius: 8,
-                cursor: "pointer",
-                background: "#fef3c7",
-                color: "#92400e",
-                transition: "background 0.2s",
-              }}
-              title="Calculate optimal Kp, Ki, Kd for the current tank capacity and valve slew rate"
-            >
-              Auto-Tune PID
-            </button>
-            <div style={{ marginLeft: "auto", fontSize: 12, color: "#64748b", fontFamily: "monospace" }}>
-              t = {time}
-            </div>
-          </div>
-
-          {/* User Controls */}
-          <div style={{
-            background: "#f0f9ff",
-            borderRadius: 10,
-            padding: 14,
-            marginBottom: 12,
-            border: "1px solid #bae6fd",
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#0369a1", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              User Controls
-            </div>
-            <SliderWithInput label="Tank Capacity" value={tankCapacity} min={100} max={1000} step={10} onChange={handleTankCapacityChange} color="#0ea5e9" unit="L" />
-            <SliderWithInput label="Inflow (disturbance)" value={inflow} min={0} max={10} step={0.1} onChange={setInflow} color="#3b82f6" unit="L/t" />
-            <SliderWithInput label="Setpoint (target level)" value={setpoint} min={0} max={tankCapacity} step={1} onChange={setSetpoint} color="#ef4444" unit="L" />
-            <SliderWithInput label="Simulation Speed" value={simSpeed} min={1} max={60} step={1} onChange={setSimSpeed} color="#8b5cf6" unit="ticks/s" />
-            <SliderWithInput label="Valve Slew Rate (max change/tick)" value={maxSlewRate} min={0.1} max={10} step={0.1} onChange={setMaxSlewRate} color="#6366f1" unit="L/t" />
-          </div>
-
-          {/* PID Tuning */}
-          <div style={{
-            background: "#fefce8",
-            borderRadius: 10,
-            padding: 14,
-            border: "1px solid #fde68a",
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#a16207", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              PID Tuning
-            </div>
-            <SliderWithInput label="Kp (Proportional)" value={kp} min={0} max={0.5} step={0.001} onChange={setKp} color="#f59e0b" />
-            <SliderWithInput label="Ki (Integral)" value={ki} min={0} max={0.05} step={0.0001} onChange={setKi} color="#f59e0b" />
-            <SliderWithInput label="Kd (Derivative)" value={kd} min={0} max={5} step={0.01} onChange={setKd} color="#f59e0b" />
-          </div>
-        </div>
-      </div>
-
-      {/* Time History Chart */}
-      <div style={{
-        marginTop: 20,
-        background: "#f8fafc",
-        borderRadius: 12,
-        padding: 16,
-        border: "1px solid #e2e8f0",
-      }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-          Time History
-        </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <LineChart data={history}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="t" fontSize={10} stroke="#94a3b8" label={{ value: "Time", position: "insideBottomRight", offset: -5, fontSize: 10 }} />
-            <YAxis yAxisId="level" domain={[0, tankCapacity]} fontSize={10} stroke="#94a3b8" label={{ value: "Level (L)", angle: -90, position: "insideLeft", fontSize: 10 }} />
-            <YAxis yAxisId="flow" orientation="right" domain={[0, MAX_FLOW]} fontSize={10} stroke="#94a3b8" label={{ value: "Flow (L/t)", angle: 90, position: "insideRight", fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ fontSize: 12, borderRadius: 8 }}
-              formatter={(value, name) => [typeof value === "number" ? value.toFixed(2) : value, name]}
-            />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Line yAxisId="level" type="monotone" dataKey="level" stroke="#3b82f6" strokeWidth={2} dot={false} name="Level" />
-            <Line yAxisId="level" type="monotone" dataKey="setpoint" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" dot={false} name="Setpoint" />
-            <Line yAxisId="flow" type="monotone" dataKey="inflow" stroke="#22c55e" strokeWidth={1.5} dot={false} name="Inflow" />
-            <Line yAxisId="flow" type="monotone" dataKey="outflow" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="Outflow" />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Status bar */}
-      <div style={{
-        marginTop: 12,
+    <div
+      ref={containerRef}
+      style={{
+        fontFamily: "'Inter', -apple-system, sans-serif",
+        height: availHeight,
         display: "flex",
-        gap: isMobile ? 8 : 20,
-        justifyContent: "center",
-        flexWrap: "wrap",
-        fontSize: 12,
-        color: "#64748b",
-        fontFamily: "monospace",
-      }}>
-        <span>Level: <b style={{ color: "#3b82f6" }}>{level.toFixed(1)} L</b></span>
-        <span>Error: <b style={{ color: Math.abs(level - setpoint) > 10 ? "#ef4444" : "#22c55e" }}>{(level - setpoint).toFixed(1)} L</b></span>
-        <span>Inflow: <b style={{ color: "#22c55e" }}>{inflow.toFixed(1)} L/t</b></span>
-        <span>Outflow: <b style={{ color: "#f59e0b" }}>{outflow.toFixed(1)} L/t</b></span>
-      </div>
+        flexDirection: layoutMode === 'wide' ? 'row' : 'column',
+        gap: layoutMode === 'wide' ? 16 : 12,
+        overflow: "hidden",
+      }}
+    >
+      {/* WIDE MODE: Left Tank + Center Chart + Right Controls */}
+      {layoutMode === 'wide' ? (
+        <>
+          {/* Left: Tank Visualization (fixed width) */}
+          <div style={{
+            flex: "0 0 280px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "flex-start",
+            overflow: "hidden",
+          }}>
+            <TankVisualization
+              level={level}
+              capacity={tankCapacity}
+              inflow={inflow}
+              outflow={outflow}
+              setpoint={setpoint}
+            />
+          </div>
+
+          {/* Center: Time History Chart (flex) */}
+          <div style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            minWidth: 300,
+            overflow: "hidden",
+          }}>
+            <div style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#334155",
+              marginBottom: 4,
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+            }}>
+              Time History
+            </div>
+            <ResponsiveContainer width="100%" height={chartHeight}>
+              <LineChart data={history}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="t" fontSize={10} stroke="#94a3b8" label={{ value: "Time", position: "insideBottomRight", offset: -5, fontSize: 10 }} />
+                <YAxis yAxisId="level" domain={[0, tankCapacity]} fontSize={10} stroke="#94a3b8" label={{ value: "Level (L)", angle: -90, position: "insideLeft", fontSize: 10 }} />
+                <YAxis yAxisId="flow" orientation="right" domain={[0, MAX_FLOW]} fontSize={10} stroke="#94a3b8" label={{ value: "Flow (L/t)", angle: 90, position: "insideRight", fontSize: 10 }} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  formatter={(value, name) => [typeof value === "number" ? value.toFixed(2) : value, name]}
+                />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Line yAxisId="level" type="monotone" dataKey="level" stroke="#3b82f6" strokeWidth={2} dot={false} name="Level" />
+                <Line yAxisId="level" type="monotone" dataKey="setpoint" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" dot={false} name="Setpoint" />
+                <Line yAxisId="flow" type="monotone" dataKey="inflow" stroke="#22c55e" strokeWidth={1.5} dot={false} name="Inflow" />
+                <Line yAxisId="flow" type="monotone" dataKey="outflow" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="Outflow" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Right: Controls Panel (stacked vertically) */}
+          <div style={{
+            flex: "0 0 280px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            overflow: "hidden",
+          }}>
+            {/* Transport Controls */}
+            <div style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}>
+              <button
+                onClick={() => setRunning(!running)}
+                style={{
+                  padding: "6px 16px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: running ? "#ef4444" : "#22c55e",
+                  color: "white",
+                  transition: "background 0.2s",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {running ? "⏸ Pause" : "▶ Start"}
+              </button>
+              <button
+                onClick={reset}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: "white",
+                  color: "#475569",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Reset
+              </button>
+              <button
+                onClick={autoTune}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  border: "1px solid #fbbf24",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  transition: "background 0.2s",
+                }}
+                title="Calculate optimal Kp, Ki, Kd"
+              >
+                Auto-Tune
+              </button>
+              <div style={{ marginLeft: "auto", fontSize: 11, color: "#64748b", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                t={time}
+              </div>
+            </div>
+
+            {/* User Controls */}
+            <div style={{
+              background: "#F8F6F0",
+              borderRadius: 10,
+              padding: 12,
+              border: "1px solid #D9D3C7",
+              overflow: "auto",
+              flex: 1,
+            }}>
+              <div style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#6b5b4f",
+                marginBottom: 6,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}>
+                User Controls
+              </div>
+              <SliderWithInput label="Tank Cap." value={tankCapacity} min={100} max={1000} step={10} onChange={handleTankCapacityChange} color="#0ea5e9" unit="L" />
+              <SliderWithInput label="Inflow" value={inflow} min={0} max={10} step={0.1} onChange={setInflow} color="#3b82f6" unit="L/t" />
+              <SliderWithInput label="Setpoint" value={setpoint} min={0} max={tankCapacity} step={1} onChange={setSetpoint} color="#ef4444" unit="L" />
+              <SliderWithInput label="Sim Speed" value={simSpeed} min={1} max={60} step={1} onChange={setSimSpeed} color="#8b5cf6" unit="ticks/s" />
+              <SliderWithInput label="Valve Slew" value={maxSlewRate} min={0.1} max={10} step={0.1} onChange={setMaxSlewRate} color="#6366f1" unit="L/t" />
+            </div>
+
+            {/* PID Tuning */}
+            <div style={{
+              background: "#F8F6F0",
+              borderRadius: 10,
+              padding: 12,
+              border: "1px solid #D9D3C7",
+              overflow: "auto",
+              flex: 1,
+            }}>
+              <div style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#6b5b4f",
+                marginBottom: 6,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}>
+                PID Tuning
+              </div>
+              <SliderWithInput label="Kp" value={kp} min={0} max={0.5} step={0.001} onChange={setKp} color="#f59e0b" />
+              <SliderWithInput label="Ki" value={ki} min={0} max={0.05} step={0.0001} onChange={setKi} color="#f59e0b" />
+              <SliderWithInput label="Kd" value={kd} min={0} max={5} step={0.01} onChange={setKd} color="#f59e0b" />
+            </div>
+
+            {/* Status Bar */}
+            <div style={{
+              fontSize: 10,
+              color: "#64748b",
+              fontFamily: "monospace",
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              padding: "8px 0",
+            }}>
+              <span>Level: <b style={{ color: "#3b82f6" }}>{level.toFixed(1)}L</b></span>
+              <span>Error: <b style={{ color: Math.abs(level - setpoint) > 10 ? "#ef4444" : "#22c55e" }}>{(level - setpoint).toFixed(1)}L</b></span>
+              <span>In/Out: <b style={{ color: "#22c55e" }}>{inflow.toFixed(1)}</b> / <b style={{ color: "#f59e0b" }}>{outflow.toFixed(1)}</b></span>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* TALL MODE: Tank + Chart on top, Tabbed Controls below */
+        <>
+          {/* Top: Tank + Chart side by side (or stacked if very narrow) */}
+          <div style={{
+            flex: "0 0 55%",
+            display: "flex",
+            gap: 10,
+            overflow: "hidden",
+          }}>
+            {/* Tank */}
+            <div style={{
+              flex: "0 0 auto",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "center",
+            }}>
+              <TankVisualization
+                level={level}
+                capacity={tankCapacity}
+                inflow={inflow}
+                outflow={outflow}
+                setpoint={setpoint}
+              />
+            </div>
+
+            {/* Chart */}
+            <div style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 200,
+              overflow: "hidden",
+            }}>
+              <div style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#334155",
+                marginBottom: 2,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+              }}>
+                History
+              </div>
+              <ResponsiveContainer width="100%" height={chartHeight}>
+                <LineChart data={history}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="t" fontSize={9} stroke="#94a3b8" />
+                  <YAxis yAxisId="level" domain={[0, tankCapacity]} fontSize={9} stroke="#94a3b8" width={35} />
+                  <YAxis yAxisId="flow" orientation="right" domain={[0, MAX_FLOW]} fontSize={9} stroke="#94a3b8" width={35} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 11, borderRadius: 6 }}
+                    formatter={(value, name) => [typeof value === "number" ? value.toFixed(2) : value, name]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line yAxisId="level" type="monotone" dataKey="level" stroke="#3b82f6" strokeWidth={2} dot={false} name="Level" />
+                  <Line yAxisId="level" type="monotone" dataKey="setpoint" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" dot={false} name="Setpoint" />
+                  <Line yAxisId="flow" type="monotone" dataKey="inflow" stroke="#22c55e" strokeWidth={1.5} dot={false} name="Inflow" />
+                  <Line yAxisId="flow" type="monotone" dataKey="outflow" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="Outflow" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Bottom: Tabbed Controls + Status */}
+          <div style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}>
+            {/* Transport buttons */}
+            <div style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+              marginBottom: 8,
+              flexWrap: "wrap",
+            }}>
+              <button
+                onClick={() => setRunning(!running)}
+                style={{
+                  padding: "5px 14px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: "none",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: running ? "#ef4444" : "#22c55e",
+                  color: "white",
+                  transition: "background 0.2s",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {running ? "⏸" : "▶"}
+              </button>
+              <button
+                onClick={reset}
+                style={{
+                  padding: "5px 10px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: "white",
+                  color: "#475569",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Reset
+              </button>
+              <button
+                onClick={autoTune}
+                style={{
+                  padding: "5px 10px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: "1px solid #fbbf24",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: "#fef3c7",
+                  color: "#92400e",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Tune
+              </button>
+              <div style={{
+                marginLeft: "auto",
+                fontSize: 10,
+                color: "#64748b",
+                fontFamily: "monospace",
+                whiteSpace: "nowrap",
+              }}>
+                t={time}
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{
+              display: "flex",
+              gap: 6,
+              marginBottom: 8,
+              borderBottom: "1px solid #e2e8f0",
+            }}>
+              <button
+                onClick={() => setControlTab('user')}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: controlTab === 'user' ? "#3b82f6" : "transparent",
+                  color: controlTab === 'user' ? "white" : "#64748b",
+                  border: "none",
+                  borderRadius: "6px 6px 0 0",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+              >
+                User
+              </button>
+              <button
+                onClick={() => setControlTab('pid')}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: controlTab === 'pid' ? "#f59e0b" : "transparent",
+                  color: controlTab === 'pid' ? "white" : "#64748b",
+                  border: "none",
+                  borderRadius: "6px 6px 0 0",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+              >
+                PID
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div style={{
+              flex: 1,
+              overflow: "auto",
+              background: "#F8F6F0",
+              borderRadius: 10,
+              padding: 12,
+              border: "1px solid #D9D3C7",
+            }}>
+              {controlTab === 'user' ? (
+                <div>
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "#6b5b4f",
+                    marginBottom: 6,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}>
+                    User Controls
+                  </div>
+                  <SliderWithInput label="Tank Cap." value={tankCapacity} min={100} max={1000} step={10} onChange={handleTankCapacityChange} color="#0ea5e9" unit="L" />
+                  <SliderWithInput label="Inflow" value={inflow} min={0} max={10} step={0.1} onChange={setInflow} color="#3b82f6" unit="L/t" />
+                  <SliderWithInput label="Setpoint" value={setpoint} min={0} max={tankCapacity} step={1} onChange={setSetpoint} color="#ef4444" unit="L" />
+                  <SliderWithInput label="Sim Speed" value={simSpeed} min={1} max={60} step={1} onChange={setSimSpeed} color="#8b5cf6" unit="ticks/s" />
+                  <SliderWithInput label="Valve Slew" value={maxSlewRate} min={0.1} max={10} step={0.1} onChange={setMaxSlewRate} color="#6366f1" unit="L/t" />
+                </div>
+              ) : (
+                <div>
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "#6b5b4f",
+                    marginBottom: 6,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.5,
+                  }}>
+                    PID Tuning
+                  </div>
+                  <SliderWithInput label="Kp" value={kp} min={0} max={0.5} step={0.001} onChange={setKp} color="#f59e0b" />
+                  <SliderWithInput label="Ki" value={ki} min={0} max={0.05} step={0.0001} onChange={setKi} color="#f59e0b" />
+                  <SliderWithInput label="Kd" value={kd} min={0} max={5} step={0.01} onChange={setKd} color="#f59e0b" />
+                </div>
+              )}
+            </div>
+
+            {/* Status */}
+            <div style={{
+              fontSize: 10,
+              color: "#64748b",
+              fontFamily: "monospace",
+              display: "flex",
+              gap: 10,
+              marginTop: 8,
+              flexWrap: "wrap",
+            }}>
+              <span>Level: <b style={{ color: "#3b82f6" }}>{level.toFixed(1)}L</b></span>
+              <span>Error: <b style={{ color: Math.abs(level - setpoint) > 10 ? "#ef4444" : "#22c55e" }}>{(level - setpoint).toFixed(1)}L</b></span>
+              <span>In: <b style={{ color: "#22c55e" }}>{inflow.toFixed(1)}</b> Out: <b style={{ color: "#f59e0b" }}>{outflow.toFixed(1)}</b></span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

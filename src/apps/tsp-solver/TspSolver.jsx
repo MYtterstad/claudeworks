@@ -1,15 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 
-function useIsMobile(breakpoint = 640) {
-  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
-  useEffect(() => {
-    const handler = () => setMobile(window.innerWidth < breakpoint);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, [breakpoint]);
-  return mobile;
-}
-
 // ============================================================
 // BRITISH TOWN NAME GENERATOR
 // ============================================================
@@ -442,10 +432,10 @@ function branchAndBoundStep(state, batchSize) {
 // CONVERGENCE CHART COMPONENT
 // ============================================================
 
-function ConvergenceChart({ history, userDistance, exactDistance }) {
-  const W = 800;
-  const H = 200;
-  const PAD = { top: 20, right: 20, bottom: 35, left: 55 };
+function ConvergenceChart({ history, userDistance, exactDistance, compact = false }) {
+  const W = compact ? 300 : 800;
+  const H = compact ? 120 : 200;
+  const PAD = compact ? { top: 10, right: 10, bottom: 20, left: 30 } : { top: 20, right: 20, bottom: 35, left: 55 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
@@ -497,7 +487,7 @@ function ConvergenceChart({ history, userDistance, exactDistance }) {
       padding: 14,
       border: "1px solid #e2e8f0",
     }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+      <div style={{ fontSize: compact ? 10 : 12, fontWeight: 700, color: "#334155", marginBottom: compact ? 4 : 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
         Convergence
       </div>
       <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
@@ -565,13 +555,17 @@ function ConvergenceChart({ history, userDistance, exactDistance }) {
         ))}
 
         {/* Axis labels */}
-        <text x={W / 2} y={H - 2} fontSize={11} fill="#64748b" textAnchor="middle" fontFamily="'Inter', sans-serif">
-          Generation
-        </text>
-        <text x={14} y={H / 2} fontSize={11} fill="#64748b" textAnchor="middle" fontFamily="'Inter', sans-serif"
-          transform={`rotate(-90, 14, ${H / 2})`}>
-          Distance
-        </text>
+        {!compact && (
+          <>
+            <text x={W / 2} y={H - 2} fontSize={11} fill="#64748b" textAnchor="middle" fontFamily="'Inter', sans-serif">
+              Generation
+            </text>
+            <text x={14} y={H / 2} fontSize={11} fill="#64748b" textAnchor="middle" fontFamily="'Inter', sans-serif"
+              transform={`rotate(-90, 14, ${H / 2})`}>
+              Distance
+            </text>
+          </>
+        )}
 
         {/* Current best label */}
         {history.length > 0 && (
@@ -1024,7 +1018,11 @@ function MapView({ cities, userPath, bestRoute, exactRoute, selectedEliteRoute, 
 // ============================================================
 
 export default function TspSolver() {
-  const isMobile = useIsMobile();
+  const containerRef = useRef(null);
+  const [layoutMode, setLayoutMode] = useState('wide');
+  const [availHeight, setAvailHeight] = useState(600);
+  const [controlTab, setControlTab] = useState('setup');
+
   const [numCities, setNumCities] = useState(10);
   const [seed, setSeed] = useState(42);
   const [cities, setCities] = useState(() => generateCities(10, 42));
@@ -1032,7 +1030,6 @@ export default function TspSolver() {
   const [bestRoute, setBestRoute] = useState(null);
   const [hoveredCity, setHoveredCity] = useState(null);
   const [selectedCity, setSelectedCity] = useState(null);
-  const [mapExpanded, setMapExpanded] = useState(false);
 
   // GA parameters
   const [popSize, setPopSize] = useState(100);
@@ -1083,6 +1080,34 @@ export default function TspSolver() {
   const gaElitesRef = useRef([]);
 
   const startCity = useMemo(() => cities.find((c) => c.isStart), [cities]);
+
+  // Layout detection: wide (>1.2 AR) vs tall (<=1.2 AR)
+  useEffect(() => {
+    const computeLayout = () => {
+      const ww = window.innerWidth;
+      const wh = window.innerHeight;
+      const aH = wh - 120;
+      setAvailHeight(aH);
+      setLayoutMode(ww / wh > 1.2 ? 'wide' : 'tall');
+    };
+
+    computeLayout();
+    const raf = requestAnimationFrame(computeLayout);
+    const timer = setTimeout(computeLayout, 200);
+    window.addEventListener('resize', computeLayout);
+
+    const ro = typeof window !== 'undefined' && window.ResizeObserver
+      ? new window.ResizeObserver(computeLayout)
+      : null;
+    if (ro && containerRef.current) ro.observe(containerRef.current);
+
+    return () => {
+      window.removeEventListener('resize', computeLayout);
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      if (ro) ro.disconnect();
+    };
+  }, []);
 
   // Stop the exact solver helper
   const stopExact = useCallback(() => {
@@ -1362,441 +1387,818 @@ export default function TspSolver() {
   };
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", padding: 20, maxWidth: 1200, margin: "0 auto" }}>
-      {/* Header */}
-      <div style={{ textAlign: "center", marginBottom: 16 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: "#1e293b", margin: 0 }}>
-          Travelling Salesman Problem{" "}
-          <span style={{ fontSize: 13, fontWeight: 400, color: "#94a3b8" }}>(v0.4)</span>
-        </h1>
-        <p style={{ fontSize: 13, color: "#64748b", margin: "4px 0 0" }}>
-          Generate cities, try to find the shortest route yourself, then let the genetic algorithm compete.
-        </p>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Map area with overlay */}
-        <div style={{
-          width: "100%",
-          position: "relative",
-          maxHeight: mapExpanded ? "none" : 360,
-          overflow: "hidden",
-          borderRadius: 12,
-          transition: "max-height 0.3s ease",
-        }}>
-          <MapView
-            cities={cities}
-            userPath={userPath}
-            bestRoute={bestRoute}
-            exactRoute={exactRoute}
-            selectedEliteRoute={selectedEliteIdx !== null && displayElites[selectedEliteIdx] ? displayElites[selectedEliteIdx].route : null}
-            startCityId={startCity?.id}
-            onCityClick={handleCityClick}
-            hoveredCity={hoveredCity}
-            setHoveredCity={setHoveredCity}
-            selectedCity={selectedCity}
-            setSelectedCity={setSelectedCity}
-          />
-          {/* Map overlay: distance + stats */}
+    <div
+      ref={containerRef}
+      style={{
+        fontFamily: "'Inter', -apple-system, sans-serif",
+        width: "100%",
+        height: `${availHeight}px`,
+        display: "flex",
+        flexDirection: layoutMode === 'wide' ? 'row' : 'column',
+        gap: 12,
+        padding: 12,
+        overflow: "hidden",
+      }}
+    >
+      {/* WIDE MODE: side-by-side (LEFT: Map, RIGHT: Controls) */}
+      {layoutMode === 'wide' && (
+        <>
+          {/* LEFT: Map taking ~60-65% width */}
           <div style={{
-            position: "absolute",
-            top: 10,
-            left: 10,
-            background: "rgba(0,0,0,0.7)",
-            borderRadius: 8,
-            padding: "8px 14px",
-            color: "white",
-            fontSize: 12,
-            fontFamily: "'JetBrains Mono', monospace",
+            flex: "0 0 calc(62% - 6px)",
             display: "flex",
-            gap: 16,
-            pointerEvents: "none",
+            flexDirection: "column",
+            position: "relative",
+            overflow: "hidden",
+            borderRadius: 12,
           }}>
-            <span>Cities: <b style={{ color: "#4ade80" }}>{cities.length}</b></span>
-            {userPath.length > 0 && (
-              <span>Visited: <b style={{ color: "#facc15" }}>{userPath.length}/{cities.length}</b></span>
-            )}
-            {userPath.length >= 2 && (
-              <span>
-                {userPathComplete ? "Your route" : "So far"}:{" "}
-                <b style={{ color: "#facc15" }}>{Math.round(userDistance)}</b>
-              </span>
-            )}
-            {bestRoute && (
-              <span>GA best: <b style={{ color: "#ef4444" }}>{Math.round(totalDistance(bestRoute, cities))}</b></span>
-            )}
-            {gaRunning && (
-              <span>Gen: <b style={{ color: "#ef4444" }}>{gaGeneration}</b></span>
-            )}
-            {exactRoute && (
-              <span>Exact{exactFinished ? "" : "..."}: <b style={{ color: "#3b82f6" }}>{Math.round(totalDistance(exactRoute, cities))}</b></span>
-            )}
-          </div>
-          {/* Expand / collapse toggle */}
-          <button
-            onClick={() => setMapExpanded((v) => !v)}
-            style={{
+            <MapView
+              cities={cities}
+              userPath={userPath}
+              bestRoute={bestRoute}
+              exactRoute={exactRoute}
+              selectedEliteRoute={selectedEliteIdx !== null && displayElites[selectedEliteIdx] ? displayElites[selectedEliteIdx].route : null}
+              startCityId={startCity?.id}
+              onCityClick={handleCityClick}
+              hoveredCity={hoveredCity}
+              setHoveredCity={setHoveredCity}
+              selectedCity={selectedCity}
+              setSelectedCity={setSelectedCity}
+            />
+            {/* Map overlay: distance + stats */}
+            <div style={{
               position: "absolute",
-              bottom: 8,
-              right: 8,
+              top: 10,
+              left: 10,
               background: "rgba(0,0,0,0.7)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              borderRadius: 6,
+              borderRadius: 8,
+              padding: "8px 14px",
               color: "white",
               fontSize: 11,
-              fontWeight: 600,
-              padding: "4px 10px",
-              cursor: "pointer",
-              fontFamily: "'Inter', sans-serif",
+              fontFamily: "'JetBrains Mono', monospace",
               display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-            title={mapExpanded ? "Compact map" : "Expand map"}
-          >
-            {mapExpanded ? "▼ Compact" : "▲ Expand"}
-          </button>
-        </div>
-
-        {/* Elite analysis panel — right below map for easy comparison */}
-        {!gaRunning && elitePanelOpen && displayElites.length > 0 && (
-          <ElitePanel
-            elites={displayElites}
-            cities={cities}
-            minSeqLength={minSeqLength}
-            setMinSeqLength={setMinSeqLength}
-            selectedEliteIdx={selectedEliteIdx}
-            setSelectedEliteIdx={setSelectedEliteIdx}
-            currentGen={gaGeneration}
-            onClose={() => { setElitePanelOpen(false); setSelectedEliteIdx(null); }}
-          />
-        )}
-
-        {/* Top controls row: Map Setup | Your Path | Legend */}
-        <div style={{ display: "flex", gap: 12, flexDirection: isMobile ? "column" : "row" }}>
-          {/* City generation */}
-          <div style={{
-            background: "#f0fdf4",
-            borderRadius: 10,
-            padding: 14,
-            border: "1px solid #bbf7d0",
-            flex: "1 1 0",
-            minWidth: 0,
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Map Setup
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <label style={{ fontSize: 13, fontWeight: 600, color: "#166534" }}>Cities</label>
-                <span style={{ fontSize: 13, fontFamily: "monospace", color: "#166534" }}>{numCities}</span>
-              </div>
-              <input
-                type="range"
-                min={3}
-                max={200}
-                value={numCities}
-                onChange={(e) => setNumCities(parseInt(e.target.value))}
-                style={{ width: "100%", accentColor: "#22c55e" }}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace", marginBottom: 8, textAlign: "right" }}>
-              seed: {seed}
-            </div>
-            <button
-              onClick={handleGenerate}
-              style={{ ...buttonStyle, background: "#22c55e", color: "white", width: "100%" }}
-            >
-              Generate New Map
-            </button>
-          </div>
-
-          {/* User path info */}
-          <div style={{
-            background: "#fefce8",
-            borderRadius: 10,
-            padding: 14,
-            border: "1px solid #fde68a",
-            flex: "1 1 0",
-            minWidth: 0,
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#a16207", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Your Path
-            </div>
-            <div style={{ fontSize: 13, color: "#92400e", marginBottom: 8, lineHeight: 1.5 }}>
-              {userPath.length === 0 ? (
-                <span>Click the start city (black center dot) to begin your route.</span>
-              ) : (
-                <>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span>Visited:</span>
-                    <b>{userPath.length} / {cities.length}</b>
-                  </div>
-                  {userPathComplete && (
-                    <div style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#22c55e",
-                      textTransform: "uppercase",
-                      marginBottom: 4,
-                    }}>
-                      Route complete!
-                    </div>
-                  )}
-                  <div style={{
-                    background: "#fef9c3",
-                    border: "1px solid #fde68a",
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                    marginTop: 6,
-                    textAlign: "center",
-                  }}>
-                    <div style={{ fontSize: 11, color: "#a16207", marginBottom: 2 }}>
-                      {userPathComplete ? "Total Distance" : "Distance So Far"}
-                    </div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: "#92400e", fontFamily: "monospace" }}>
-                      {userDistance !== null ? Math.round(userDistance) : 0}
-                    </div>
-                  </div>
-                </>
+              gap: 12,
+              pointerEvents: "none",
+              flexWrap: "wrap",
+            }}>
+              <span>Cities: <b style={{ color: "#4ade80" }}>{cities.length}</b></span>
+              {userPath.length > 0 && (
+                <span>Visited: <b style={{ color: "#facc15" }}>{userPath.length}/{cities.length}</b></span>
+              )}
+              {userPath.length >= 2 && (
+                <span>{userPathComplete ? "Your route" : "So far"}: <b style={{ color: "#facc15" }}>{Math.round(userDistance)}</b></span>
+              )}
+              {bestRoute && (
+                <span>GA: <b style={{ color: "#ef4444" }}>{Math.round(totalDistance(bestRoute, cities))}</b></span>
+              )}
+              {exactRoute && (
+                <span>Exact: <b style={{ color: "#3b82f6" }}>{Math.round(totalDistance(exactRoute, cities))}</b></span>
               )}
             </div>
-            <button
-              onClick={handleResetUserPath}
-              style={{ ...buttonStyle, background: "#fbbf24", color: "#92400e", width: "100%", fontSize: 12 }}
-            >
-              Reset My Path
-            </button>
           </div>
 
-          {/* Legend */}
+          {/* RIGHT: Side panel (35-40% width) with scrollable content */}
           <div style={{
-            background: "#f8fafc",
-            borderRadius: 10,
-            padding: 14,
-            border: "1px solid #e2e8f0",
-            flex: "1 1 0",
+            flex: "1 1 calc(38% - 6px)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            overflow: "hidden",
             minWidth: 0,
           }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Legend
+            {/* Map Setup section */}
+            <div style={{
+              background: "#f0fdf4",
+              borderRadius: 10,
+              padding: 10,
+              border: "1px solid #bbf7d0",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Map Setup
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "#166534" }}>Cities</label>
+                  <span style={{ fontSize: 11, fontFamily: "monospace", color: "#166534" }}>{numCities}</span>
+                </div>
+                <input
+                  type="range"
+                  min={3}
+                  max={200}
+                  value={numCities}
+                  onChange={(e) => setNumCities(parseInt(e.target.value))}
+                  style={{ width: "100%", accentColor: "#22c55e" }}
+                />
+              </div>
+              <button
+                onClick={handleGenerate}
+                style={{ ...buttonStyle, background: "#22c55e", color: "white", width: "100%", padding: "6px 12px", fontSize: 12 }}
+              >
+                Generate
+              </button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width={16} height={16}><circle cx={8} cy={8} r={6} fill="white" stroke="#1a1a1a" strokeWidth={2} /><circle cx={8} cy={8} r={3} fill="#1a1a1a" /></svg>
-                <span style={{ fontSize: 12, color: "#475569" }}>Start / End city</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width={16} height={16}><circle cx={8} cy={8} r={6} fill="white" stroke="#1a1a1a" strokeWidth={2} /></svg>
-                <span style={{ fontSize: 12, color: "#475569" }}>Unvisited city</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width={16} height={16}><circle cx={8} cy={8} r={6} fill="#facc15" stroke="#1a1a1a" strokeWidth={2} /></svg>
-                <span style={{ fontSize: 12, color: "#475569" }}>In your path</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width={16} height={16}><line x1={0} y1={8} x2={16} y2={8} stroke="#facc15" strokeWidth={2.5} strokeDasharray="4,2" /></svg>
-                <span style={{ fontSize: 12, color: "#475569" }}>Your route</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width={16} height={16}><line x1={0} y1={8} x2={16} y2={8} stroke="#ef4444" strokeWidth={2} /></svg>
-                <span style={{ fontSize: 12, color: "#475569" }}>GA best route</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width={16} height={16}><line x1={0} y1={8} x2={16} y2={8} stroke="#3b82f6" strokeWidth={2} strokeDasharray="4,2" /></svg>
-                <span style={{ fontSize: 12, color: "#475569" }}>Exact solver best</span>
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Genetic Algorithm controls — full width */}
-        <div style={{
-          background: "#fef2f2",
-          borderRadius: 10,
-          padding: 14,
-          border: "1px solid #fecaca",
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#991b1b", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Genetic Algorithm
-          </div>
-          <div style={{ display: "flex", gap: isMobile ? 10 : 16, flexWrap: "wrap", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-end" }}>
-            {/* Population size */}
-            <div style={{ flex: "1 1 140px", minWidth: 120 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Population</label>
-                <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{popSize}</span>
+            {/* Your Path section */}
+            <div style={{
+              background: "#fefce8",
+              borderRadius: 10,
+              padding: 10,
+              border: "1px solid #fde68a",
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#a16207", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Your Path
               </div>
-              <input type="range" min={20} max={500} step={10} value={popSize}
-                onChange={(e) => setPopSize(parseInt(e.target.value))}
-                disabled={gaRunning}
-                style={{ width: "100%", accentColor: "#ef4444" }} />
-            </div>
-            {/* Mutation rate */}
-            <div style={{ flex: "1 1 140px", minWidth: 120 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Mutation</label>
-                <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{(mutationRate * 100).toFixed(1)}%</span>
+              <div style={{ fontSize: 12, color: "#92400e", marginBottom: 6, lineHeight: 1.4 }}>
+                {userPath.length === 0 ? (
+                  <span style={{ fontSize: 11 }}>Click start city to begin.</span>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: 3 }}><b>{userPath.length} / {cities.length}</b></div>
+                    {userPathComplete && (
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#22c55e", marginBottom: 3 }}>Complete!</div>
+                    )}
+                    {userPath.length >= 2 && (
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: "monospace" }}>
+                        {Math.round(userDistance)}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
-              <input type="range" min={1} max={100} value={mutationRate * 1000}
-                onChange={(e) => setMutationRate(parseInt(e.target.value) / 1000)}
-                disabled={gaRunning}
-                style={{ width: "100%", accentColor: "#ef4444" }} />
+              <button
+                onClick={handleResetUserPath}
+                style={{ ...buttonStyle, background: "#fbbf24", color: "#92400e", width: "100%", padding: "4px 10px", fontSize: 11 }}
+              >
+                Reset
+              </button>
             </div>
-            {/* Elite count */}
-            <div style={{ flex: "1 1 120px", minWidth: 100 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Elites</label>
-                <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{eliteCount}</span>
-              </div>
-              <input type="range" min={1} max={20} value={eliteCount}
-                onChange={(e) => setEliteCount(parseInt(e.target.value))}
-                disabled={gaRunning}
-                style={{ width: "100%", accentColor: "#ef4444" }} />
-            </div>
-            {/* Stagnation limit */}
-            <div style={{ flex: "1 1 140px", minWidth: 120 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Stagnation</label>
-                <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{stagnationLimit}</span>
-              </div>
-              <input type="range" min={50} max={2000} step={50} value={stagnationLimit}
-                onChange={(e) => setStagnationLimit(parseInt(e.target.value))}
-                disabled={gaRunning}
-                style={{ width: "100%", accentColor: "#ef4444" }} />
-            </div>
-            {/* Elite diversity */}
-            <div style={{ flex: "1 1 140px", minWidth: 120 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Diversity</label>
-                <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{Math.round((1 - maxSameRatio) * 100)}%</span>
-              </div>
-              <input type="range" min={0} max={100} value={Math.round((1 - maxSameRatio) * 100)}
-                onChange={(e) => setMaxSameRatio(1 - parseInt(e.target.value) / 100)}
-                disabled={gaRunning}
-                style={{ width: "100%", accentColor: "#ef4444" }} />
-            </div>
-            {/* Speed */}
-            <div style={{ flex: "0 0 auto" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#991b1b", marginBottom: 3 }}>Speed</div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {speedLabels.map((label, i) => (
-                  <button key={label}
-                    onClick={() => setSpeed(i)}
+
+            {/* Scrollable area for GA controls and stats */}
+            <div style={{
+              flex: 1,
+              overflow: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              minHeight: 0,
+            }}>
+              {/* GA Controls section */}
+              <div style={{
+                background: "#fef2f2",
+                borderRadius: 10,
+                padding: 10,
+                border: "1px solid #fecaca",
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#991b1b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  GA Controls
+                </div>
+
+                {/* GA sliders in compact 2-column grid */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 8,
+                  marginBottom: 8,
+                }}>
+                  {/* Population */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                      <label style={{ fontSize: 10, fontWeight: 600, color: "#991b1b" }}>Pop</label>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#991b1b" }}>{popSize}</span>
+                    </div>
+                    <input type="range" min={20} max={500} step={10} value={popSize}
+                      onChange={(e) => setPopSize(parseInt(e.target.value))}
+                      disabled={gaRunning}
+                      style={{ width: "100%", accentColor: "#ef4444", height: 4 }} />
+                  </div>
+
+                  {/* Mutation */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                      <label style={{ fontSize: 10, fontWeight: 600, color: "#991b1b" }}>Mut</label>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#991b1b" }}>{(mutationRate * 100).toFixed(1)}%</span>
+                    </div>
+                    <input type="range" min={1} max={100} value={mutationRate * 1000}
+                      onChange={(e) => setMutationRate(parseInt(e.target.value) / 1000)}
+                      disabled={gaRunning}
+                      style={{ width: "100%", accentColor: "#ef4444", height: 4 }} />
+                  </div>
+
+                  {/* Elites */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                      <label style={{ fontSize: 10, fontWeight: 600, color: "#991b1b" }}>Elite</label>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#991b1b" }}>{eliteCount}</span>
+                    </div>
+                    <input type="range" min={1} max={20} value={eliteCount}
+                      onChange={(e) => setEliteCount(parseInt(e.target.value))}
+                      disabled={gaRunning}
+                      style={{ width: "100%", accentColor: "#ef4444", height: 4 }} />
+                  </div>
+
+                  {/* Stagnation */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                      <label style={{ fontSize: 10, fontWeight: 600, color: "#991b1b" }}>Stag</label>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#991b1b" }}>{stagnationLimit}</span>
+                    </div>
+                    <input type="range" min={50} max={2000} step={50} value={stagnationLimit}
+                      onChange={(e) => setStagnationLimit(parseInt(e.target.value))}
+                      disabled={gaRunning}
+                      style={{ width: "100%", accentColor: "#ef4444", height: 4 }} />
+                  </div>
+
+                  {/* Diversity */}
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                      <label style={{ fontSize: 10, fontWeight: 600, color: "#991b1b" }}>Diversity</label>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: "#991b1b" }}>{Math.round((1 - maxSameRatio) * 100)}%</span>
+                    </div>
+                    <input type="range" min={0} max={100} value={Math.round((1 - maxSameRatio) * 100)}
+                      onChange={(e) => setMaxSameRatio(1 - parseInt(e.target.value) / 100)}
+                      disabled={gaRunning}
+                      style={{ width: "100%", accentColor: "#ef4444", height: 4 }} />
+                  </div>
+                </div>
+
+                {/* Speed buttons in a row */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "#991b1b", marginBottom: 3 }}>Speed</div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {speedLabels.map((label, i) => (
+                      <button key={label}
+                        onClick={() => setSpeed(i)}
+                        style={{
+                          ...buttonStyle,
+                          padding: "3px 8px",
+                          fontSize: 10,
+                          flex: 1,
+                          background: speed === i ? "#ef4444" : "#fecaca",
+                          color: speed === i ? "white" : "#991b1b",
+                        }}
+                      >{label}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Exact solver toggle */}
+                <div style={{ marginBottom: 8, opacity: exactAvailable ? 1 : 0.5 }}>
+                  <label style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    cursor: exactAvailable && !gaRunning ? "pointer" : "default",
+                    fontSize: 11, color: "#991b1b",
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={exactEnabled && exactAvailable}
+                      onChange={(e) => setExactEnabled(e.target.checked)}
+                      disabled={!exactAvailable || gaRunning}
+                      style={{ accentColor: "#3b82f6" }}
+                    />
+                    Exact {exactAvailable ? "(on)" : "(off)"}
+                  </label>
+                </div>
+
+                {/* GA Start/Stop buttons */}
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={handleStartStopGA}
+                    disabled={cities.length < 3}
                     style={{
                       ...buttonStyle,
-                      padding: "4px 10px",
-                      fontSize: 11,
-                      background: speed === i ? "#ef4444" : "#fecaca",
-                      color: speed === i ? "white" : "#991b1b",
+                      padding: "6px 14px",
+                      background: gaRunning ? "#991b1b" : "#ef4444",
+                      color: "white",
+                      fontSize: 12,
+                      flex: 1,
                     }}
-                  >{label}</button>
-                ))}
+                  >
+                    {gaRunning ? "Stop" : (gaFinished ? "Restart" : "Start")}
+                  </button>
+                  {!gaRunning && displayElites.length > 0 && !elitePanelOpen && (
+                    <button
+                      onClick={() => { setElitePanelOpen(true); setSelectedEliteIdx(null); }}
+                      style={{
+                        ...buttonStyle,
+                        padding: "6px 12px",
+                        background: "#f97316",
+                        color: "white",
+                        fontSize: 12,
+                      }}
+                    >
+                      Elites
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-            {/* Exact solver toggle */}
-            <div style={{ flex: "0 0 auto", opacity: exactAvailable ? 1 : 0.4 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#991b1b", marginBottom: 3 }}>Exact</div>
-              <label style={{
-                display: "flex", alignItems: "center", gap: 6,
-                cursor: exactAvailable && !gaRunning ? "pointer" : "default",
-                fontSize: 12, color: "#991b1b",
-              }}>
-                <input
-                  type="checkbox"
-                  checked={exactEnabled && exactAvailable}
-                  onChange={(e) => setExactEnabled(e.target.checked)}
-                  disabled={!exactAvailable || gaRunning}
-                  style={{ accentColor: "#3b82f6" }}
+
+              {/* GA Stats line */}
+              {(gaGeneration > 0 || gaFinished) && (
+                <div style={{
+                  fontSize: 10,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#991b1b",
+                  background: "#fef2f2",
+                  borderRadius: 8,
+                  padding: 8,
+                  border: "1px solid #fecaca",
+                }}>
+                  <div style={{ marginBottom: 3 }}>Gen: <b>{gaGeneration}</b> | Best: <b>{gaBestDist !== null ? Math.round(gaBestDist) : "—"}</b></div>
+                  <div>Last improved: gen <b>{gaLastImproved}</b></div>
+                  {gaFinished && (
+                    <div style={{ color: "#22c55e", fontWeight: 700, marginTop: 3, fontSize: 9 }}>
+                      Stopped (stagnation)
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Exact Stats */}
+              {exactEnabled && exactAvailable && (exactRoute || exactFinished) && (
+                <div style={{
+                  fontSize: 10,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  color: "#1d4ed8",
+                  background: "#eff6ff",
+                  borderRadius: 8,
+                  padding: 8,
+                  border: "1px solid #bfdbfe",
+                }}>
+                  <div style={{ marginBottom: 3 }}>Exact: <b>{exactDist !== null ? Math.round(exactDist) : "—"}</b></div>
+                  <div>Nodes: <b>{exactNodes.toLocaleString()}</b></div>
+                  {exactFinished && (
+                    <div style={{ color: "#22c55e", fontWeight: 700, marginTop: 3, fontSize: 9 }}>
+                      Optimal!
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Convergence Chart - Compact */}
+              {gaHistory.length > 0 && (
+                <ConvergenceChart
+                  history={gaHistory}
+                  userDistance={userPathComplete ? userDistance : null}
+                  exactDistance={exactDist}
+                  compact={true}
                 />
-                {exactAvailable ? (cities.length <= 12 ? "On" : `On (${cities.length} cities)`) : ">20 cities"}
-              </label>
-            </div>
-            {/* Start / Stop */}
-            <div style={{ flex: "0 0 auto", display: "flex", gap: 6 }}>
-              <button
-                onClick={handleStartStopGA}
-                disabled={cities.length < 3}
-                style={{
-                  ...buttonStyle,
-                  padding: "8px 24px",
-                  background: gaRunning ? "#991b1b" : "#ef4444",
-                  color: "white",
-                  fontSize: 13,
-                }}
-              >
-                {gaRunning ? "Stop" : (gaFinished ? "Restart" : "Start")}
-              </button>
-              {/* Show Elites button — only when paused and elites available */}
-              {!gaRunning && displayElites.length > 0 && !elitePanelOpen && (
-                <button
-                  onClick={() => { setElitePanelOpen(true); setSelectedEliteIdx(null); }}
-                  style={{
-                    ...buttonStyle,
-                    padding: "8px 16px",
-                    background: "#f97316",
-                    color: "white",
-                    fontSize: 13,
-                  }}
-                >
-                  Elites
-                </button>
               )}
             </div>
           </div>
-          {/* GA stats line */}
-          {(gaGeneration > 0 || gaFinished) && (
+
+          {/* Elite panel - overlaid or in scrollable area if space */}
+          {!gaRunning && elitePanelOpen && displayElites.length > 0 && (
             <div style={{
-              marginTop: 10,
-              fontSize: 12,
-              fontFamily: "'JetBrains Mono', monospace",
-              color: "#991b1b",
-              display: "flex",
-              gap: 20,
-              flexWrap: "wrap",
+              position: "absolute",
+              top: 12,
+              right: 12,
+              width: 300,
+              maxHeight: availHeight - 24,
+              overflow: "auto",
+              zIndex: 10,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
             }}>
-              <span>Gen: <b>{gaGeneration}</b></span>
-              <span>Best: <b>{gaBestDist !== null ? Math.round(gaBestDist) : "—"}</b></span>
-              <span>Last improved: <b>gen {gaLastImproved}</b></span>
-              {gaFinished && (
-                <span style={{ color: "#22c55e", fontWeight: 700 }}>
-                  Stopped — no improvement for {stagnationLimit} generations
-                </span>
-              )}
+              <ElitePanel
+                elites={displayElites}
+                cities={cities}
+                minSeqLength={minSeqLength}
+                setMinSeqLength={setMinSeqLength}
+                selectedEliteIdx={selectedEliteIdx}
+                setSelectedEliteIdx={setSelectedEliteIdx}
+                currentGen={gaGeneration}
+                onClose={() => { setElitePanelOpen(false); setSelectedEliteIdx(null); }}
+              />
             </div>
           )}
-          {/* Exact solver stats */}
-          {exactEnabled && exactAvailable && (exactRoute || exactFinished) && (
+        </>
+      )}
+
+      {/* TALL MODE: stacked layout with tabs */}
+      {layoutMode === 'tall' && (
+        <>
+          {/* TOP: Map taking ~55% height */}
+          <div style={{
+            flex: "0 0 55%",
+            display: "flex",
+            flexDirection: "column",
+            position: "relative",
+            overflow: "hidden",
+            borderRadius: 12,
+          }}>
+            <MapView
+              cities={cities}
+              userPath={userPath}
+              bestRoute={bestRoute}
+              exactRoute={exactRoute}
+              selectedEliteRoute={selectedEliteIdx !== null && displayElites[selectedEliteIdx] ? displayElites[selectedEliteIdx].route : null}
+              startCityId={startCity?.id}
+              onCityClick={handleCityClick}
+              hoveredCity={hoveredCity}
+              setHoveredCity={setHoveredCity}
+              selectedCity={selectedCity}
+              setSelectedCity={setSelectedCity}
+            />
+            {/* Map overlay */}
             <div style={{
-              marginTop: 6,
-              fontSize: 12,
+              position: "absolute",
+              top: 8,
+              left: 8,
+              background: "rgba(0,0,0,0.7)",
+              borderRadius: 8,
+              padding: "6px 12px",
+              color: "white",
+              fontSize: 10,
               fontFamily: "'JetBrains Mono', monospace",
-              color: "#1d4ed8",
               display: "flex",
-              gap: 20,
+              gap: 10,
+              pointerEvents: "none",
               flexWrap: "wrap",
             }}>
-              <span>Exact best: <b>{exactDist !== null ? Math.round(exactDist) : "—"}</b></span>
-              <span>Nodes: <b>{exactNodes.toLocaleString()}</b></span>
-              {exactFinished && (
-                <span style={{ color: "#22c55e", fontWeight: 700 }}>
-                  Optimal found!
-                </span>
+              <span>Cities: <b style={{ color: "#4ade80" }}>{cities.length}</b></span>
+              {userPath.length > 0 && (
+                <span>Visited: <b style={{ color: "#facc15" }}>{userPath.length}/{cities.length}</b></span>
+              )}
+              {userPath.length >= 2 && (
+                <span>{userPathComplete ? "Your" : "So far"}: <b style={{ color: "#facc15" }}>{Math.round(userDistance)}</b></span>
+              )}
+              {bestRoute && (
+                <span>GA: <b style={{ color: "#ef4444" }}>{Math.round(totalDistance(bestRoute, cities))}</b></span>
               )}
             </div>
+          </div>
+
+          {/* BOTTOM: Tabbed panel (45% height) */}
+          <div style={{
+            flex: "1 1 45%",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+            overflow: "hidden",
+          }}>
+            {/* Tabs */}
+            <div style={{
+              display: "flex",
+              gap: 0,
+              borderBottom: "1px solid #e2e8f0",
+              background: "#f8fafc",
+              padding: "0 8px",
+            }}>
+              {["setup", "ga", "stats"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setControlTab(tab)}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    background: "none",
+                    border: "none",
+                    color: controlTab === tab ? "#1e293b" : "#94a3b8",
+                    borderBottom: controlTab === tab ? "2px solid #ef4444" : "2px solid transparent",
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content area - scrollable */}
+            <div style={{
+              flex: 1,
+              overflow: "auto",
+              padding: 12,
+              display: controlTab ? "block" : "none",
+            }}>
+              {/* SETUP TAB */}
+              {controlTab === "setup" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* Map Setup */}
+                  <div style={{
+                    background: "#f0fdf4",
+                    borderRadius: 10,
+                    padding: 12,
+                    border: "1px solid #bbf7d0",
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#166534", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      Map Setup
+                    </div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#166534" }}>Cities</label>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "#166534" }}>{numCities}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={3}
+                        max={200}
+                        value={numCities}
+                        onChange={(e) => setNumCities(parseInt(e.target.value))}
+                        style={{ width: "100%", accentColor: "#22c55e" }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10, color: "#64748b", fontFamily: "monospace", marginBottom: 8 }}>
+                      seed: {seed}
+                    </div>
+                    <button
+                      onClick={handleGenerate}
+                      style={{ ...buttonStyle, background: "#22c55e", color: "white", width: "100%" }}
+                    >
+                      Generate New Map
+                    </button>
+                  </div>
+
+                  {/* Your Path */}
+                  <div style={{
+                    background: "#fefce8",
+                    borderRadius: 10,
+                    padding: 12,
+                    border: "1px solid #fde68a",
+                  }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#a16207", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      Your Path
+                    </div>
+                    <div style={{ fontSize: 12, color: "#92400e", marginBottom: 8, lineHeight: 1.5 }}>
+                      {userPath.length === 0 ? (
+                        <span>Click the start city (black center dot) to begin your route.</span>
+                      ) : (
+                        <>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                            <span>Visited:</span>
+                            <b>{userPath.length} / {cities.length}</b>
+                          </div>
+                          {userPathComplete && (
+                            <div style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: "#22c55e",
+                              textTransform: "uppercase",
+                              marginBottom: 4,
+                            }}>
+                              Route complete!
+                            </div>
+                          )}
+                          {userPath.length >= 2 && (
+                            <div style={{
+                              background: "#fef9c3",
+                              border: "1px solid #fde68a",
+                              borderRadius: 8,
+                              padding: "8px 12px",
+                              marginTop: 6,
+                              textAlign: "center",
+                            }}>
+                              <div style={{ fontSize: 10, color: "#a16207", marginBottom: 2 }}>
+                                {userPathComplete ? "Total Distance" : "Distance So Far"}
+                              </div>
+                              <div style={{ fontSize: 18, fontWeight: 700, color: "#92400e", fontFamily: "monospace" }}>
+                                {Math.round(userDistance)}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleResetUserPath}
+                      style={{ ...buttonStyle, background: "#fbbf24", color: "#92400e", width: "100%", fontSize: 12 }}
+                    >
+                      Reset My Path
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* GA TAB */}
+              {controlTab === "ga" && (
+                <div style={{
+                  background: "#fef2f2",
+                  borderRadius: 10,
+                  padding: 12,
+                  border: "1px solid #fecaca",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#991b1b", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Genetic Algorithm
+                  </div>
+                  <div style={{ display: "flex", gap: 12, flexDirection: "column" }}>
+                    {/* Population size */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Population</label>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{popSize}</span>
+                      </div>
+                      <input type="range" min={20} max={500} step={10} value={popSize}
+                        onChange={(e) => setPopSize(parseInt(e.target.value))}
+                        disabled={gaRunning}
+                        style={{ width: "100%", accentColor: "#ef4444" }} />
+                    </div>
+                    {/* Mutation rate */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Mutation</label>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{(mutationRate * 100).toFixed(1)}%</span>
+                      </div>
+                      <input type="range" min={1} max={100} value={mutationRate * 1000}
+                        onChange={(e) => setMutationRate(parseInt(e.target.value) / 1000)}
+                        disabled={gaRunning}
+                        style={{ width: "100%", accentColor: "#ef4444" }} />
+                    </div>
+                    {/* Elite count */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Elites</label>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{eliteCount}</span>
+                      </div>
+                      <input type="range" min={1} max={20} value={eliteCount}
+                        onChange={(e) => setEliteCount(parseInt(e.target.value))}
+                        disabled={gaRunning}
+                        style={{ width: "100%", accentColor: "#ef4444" }} />
+                    </div>
+                    {/* Stagnation limit */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Stagnation</label>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{stagnationLimit}</span>
+                      </div>
+                      <input type="range" min={50} max={2000} step={50} value={stagnationLimit}
+                        onChange={(e) => setStagnationLimit(parseInt(e.target.value))}
+                        disabled={gaRunning}
+                        style={{ width: "100%", accentColor: "#ef4444" }} />
+                    </div>
+                    {/* Elite diversity */}
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: "#991b1b" }}>Diversity</label>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "#991b1b" }}>{Math.round((1 - maxSameRatio) * 100)}%</span>
+                      </div>
+                      <input type="range" min={0} max={100} value={Math.round((1 - maxSameRatio) * 100)}
+                        onChange={(e) => setMaxSameRatio(1 - parseInt(e.target.value) / 100)}
+                        disabled={gaRunning}
+                        style={{ width: "100%", accentColor: "#ef4444" }} />
+                    </div>
+                    {/* Speed */}
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#991b1b", marginBottom: 3 }}>Speed</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {speedLabels.map((label, i) => (
+                          <button key={label}
+                            onClick={() => setSpeed(i)}
+                            style={{
+                              ...buttonStyle,
+                              padding: "4px 10px",
+                              fontSize: 11,
+                              flex: 1,
+                              background: speed === i ? "#ef4444" : "#fecaca",
+                              color: speed === i ? "white" : "#991b1b",
+                            }}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Exact solver toggle */}
+                    <div style={{ opacity: exactAvailable ? 1 : 0.4 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#991b1b", marginBottom: 3 }}>Exact</div>
+                      <label style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        cursor: exactAvailable && !gaRunning ? "pointer" : "default",
+                        fontSize: 12, color: "#991b1b",
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={exactEnabled && exactAvailable}
+                          onChange={(e) => setExactEnabled(e.target.checked)}
+                          disabled={!exactAvailable || gaRunning}
+                          style={{ accentColor: "#3b82f6" }}
+                        />
+                        {exactAvailable ? (cities.length <= 12 ? "On" : `On (${cities.length} cities)`) : ">20 cities"}
+                      </label>
+                    </div>
+                    {/* Start / Stop */}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={handleStartStopGA}
+                        disabled={cities.length < 3}
+                        style={{
+                          ...buttonStyle,
+                          padding: "8px 24px",
+                          background: gaRunning ? "#991b1b" : "#ef4444",
+                          color: "white",
+                          fontSize: 13,
+                          flex: 1,
+                        }}
+                      >
+                        {gaRunning ? "Stop" : (gaFinished ? "Restart" : "Start")}
+                      </button>
+                      {!gaRunning && displayElites.length > 0 && !elitePanelOpen && (
+                        <button
+                          onClick={() => { setElitePanelOpen(true); setSelectedEliteIdx(null); }}
+                          style={{
+                            ...buttonStyle,
+                            padding: "8px 16px",
+                            background: "#f97316",
+                            color: "white",
+                            fontSize: 13,
+                          }}
+                        >
+                          Elites
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* STATS TAB */}
+              {controlTab === "stats" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* GA Stats */}
+                  {(gaGeneration > 0 || gaFinished) && (
+                    <div style={{
+                      fontSize: 12,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      color: "#991b1b",
+                      background: "#fef2f2",
+                      borderRadius: 10,
+                      padding: 12,
+                      border: "1px solid #fecaca",
+                    }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ marginBottom: 3 }}>Gen: <b>{gaGeneration}</b></div>
+                        <div style={{ marginBottom: 3 }}>Best: <b>{gaBestDist !== null ? Math.round(gaBestDist) : "—"}</b></div>
+                        <div>Last improved: <b>gen {gaLastImproved}</b></div>
+                      </div>
+                      {gaFinished && (
+                        <div style={{ color: "#22c55e", fontWeight: 700, fontSize: 11 }}>
+                          Stopped — no improvement for {stagnationLimit} generations
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Exact Stats */}
+                  {exactEnabled && exactAvailable && (exactRoute || exactFinished) && (
+                    <div style={{
+                      fontSize: 12,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      color: "#1d4ed8",
+                      background: "#eff6ff",
+                      borderRadius: 10,
+                      padding: 12,
+                      border: "1px solid #bfdbfe",
+                    }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ marginBottom: 3 }}>Exact best: <b>{exactDist !== null ? Math.round(exactDist) : "—"}</b></div>
+                        <div>Nodes: <b>{exactNodes.toLocaleString()}</b></div>
+                      </div>
+                      {exactFinished && (
+                        <div style={{ color: "#22c55e", fontWeight: 700, fontSize: 11 }}>
+                          Optimal found!
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Convergence chart */}
+                  {gaHistory.length > 0 && (
+                    <ConvergenceChart
+                      history={gaHistory}
+                      userDistance={userPathComplete ? userDistance : null}
+                      exactDistance={exactDist}
+                      compact={false}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Elite panel overlay */}
+          {!gaRunning && elitePanelOpen && displayElites.length > 0 && (
+            <div style={{
+              position: "absolute",
+              top: 12,
+              right: 12,
+              width: 320,
+              maxHeight: availHeight - 24,
+              overflow: "auto",
+              zIndex: 10,
+              boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+            }}>
+              <ElitePanel
+                elites={displayElites}
+                cities={cities}
+                minSeqLength={minSeqLength}
+                setMinSeqLength={setMinSeqLength}
+                selectedEliteIdx={selectedEliteIdx}
+                setSelectedEliteIdx={setSelectedEliteIdx}
+                currentGen={gaGeneration}
+                onClose={() => { setElitePanelOpen(false); setSelectedEliteIdx(null); }}
+              />
+            </div>
           )}
-        </div>
-
-        {/* Convergence chart */}
-        <ConvergenceChart
-          history={gaHistory}
-          userDistance={userPathComplete ? userDistance : null}
-          exactDistance={exactDist}
-        />
-
-      </div>
-
-      {/* Stats are in map overlay, panels, and convergence chart */}
+        </>
+      )}
     </div>
   );
 }
