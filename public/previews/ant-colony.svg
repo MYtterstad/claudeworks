@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220">
+  <defs>
+    <radialGradient id="glade" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#B8CC8A"/>
+      <stop offset="100%" stop-color="#8BA860"/>
+    </radialGradient>
+  </defs>
+  <!-- Ground -->
+  <rect width="400" height="220" rx="12" fill="url(#glade)"/>
+  <!-- Nest mound -->
+  <ellipse cx="70" cy="130" rx="28" ry="16" fill="#6B4E0A"/>
+  <ellipse cx="70" cy="128" rx="20" ry="10" fill="#8B6914"/>
+  <ellipse cx="70" cy="126" rx="7" ry="5" fill="#1a0f00"/>
+  <text x="70" y="110" text-anchor="middle" font-size="9" font-weight="bold" fill="#4A3508" font-family="sans-serif">Nest</text>
+  <!-- Cookie -->
+  <circle cx="310" cy="100" r="18" fill="#D4A050"/>
+  <circle cx="310" cy="100" r="15" fill="#E8C080"/>
+  <circle cx="304" cy="95" r="2" fill="#5C3D1A"/>
+  <circle cx="315" cy="102" r="2.5" fill="#5C3D1A"/>
+  <circle cx="308" cy="106" r="1.8" fill="#5C3D1A"/>
+  <!-- Pheromone trail (golden) -->
+  <path d="M90,130 Q140,125 180,115 Q220,105 260,100 Q280,98 295,100" stroke="rgba(180,140,50,0.5)" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <!-- Pheromone trail (blue, home) -->
+  <path d="M88,132 Q135,130 175,120 Q215,110 255,105 Q278,102 292,103" stroke="rgba(80,80,180,0.3)" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- Stone -->
+  <ellipse cx="200" cy="170" rx="18" ry="12" fill="#A0A0A0"/>
+  <ellipse cx="200" cy="168" rx="16" ry="10" fill="#B8B8B8"/>
+  <!-- Log -->
+  <rect x="130" y="55" width="50" height="10" rx="4" fill="#7A5C3A"/>
+  <line x1="135" y1="58" x2="135" y2="62" stroke="#5C3D1A" stroke-width="0.5"/>
+  <line x1="145" y1="57" x2="145" y2="63" stroke="#5C3D1A" stroke-width="0.5"/>
+  <line x1="155" y1="58" x2="155" y2="62" stroke="#5C3D1A" stroke-width="0.5"/>
+  <line x1="165" y1="57" x2="165" y2="63" stroke="#5C3D1A" stroke-width="0.5"/>
+  <line x1="175" y1="58" x2="175" y2="62" stroke="#5C3D1A" stroke-width="0.5"/>
+  <!-- Ants on trail (going to food) -->
+  <g fill="#1A0F0A">
+    <ellipse cx="120" cy="124" rx="3" ry="2"/><ellipse cx="123" cy="124" rx="2.5" ry="1.8"/><ellipse cx="126" cy="124" rx="2" ry="1.5"/>
+  </g>
+  <g fill="#1A0F0A">
+    <ellipse cx="160" cy="118" rx="3" ry="2"/><ellipse cx="163" cy="118" rx="2.5" ry="1.8"/><ellipse cx="166" cy="118" rx="2" ry="1.5"/>
+  </g>
+  <g fill="#1A0F0A">
+    <ellipse cx="220" cy="108" rx="3" ry="2"/><ellipse cx="223" cy="108" rx="2.5" ry="1.8"/><ellipse cx="226" cy="108" rx="2" ry="1.5"/>
+  </g>
+  <!-- Ants returning (carrying food - brown body) -->
+  <g fill="#5C3D1A">
+    <ellipse cx="250" cy="112" rx="3" ry="2"/><ellipse cx="247" cy="112" rx="2.5" ry="1.8"/><ellipse cx="244" cy="112" rx="2" ry="1.5"/>
+    <circle cx="252" cy="110" r="1.5" fill="#E8C080"/>
+  </g>
+  <g fill="#5C3D1A">
+    <ellipse cx="180" cy="120" rx="3" ry="2"/><ellipse cx="177" cy="120" rx="2.5" ry="1.8"/><ellipse cx="174" cy="120" rx="2" ry="1.5"/>
+    <circle cx="182" cy="118" r="1.5" fill="#E8C080"/>
+  </g>
+  <!-- Wandering foragers -->
+  <g fill="#1A0F0A">
+    <ellipse cx="280" cy="60" rx="2.5" ry="1.8"/><ellipse cx="283" cy="60" rx="2" ry="1.5"/><ellipse cx="286" cy="60" rx="1.5" ry="1.2"/>
+  </g>
+  <g fill="#1A0F0A">
+    <ellipse cx="340" cy="160" rx="2.5" ry="1.8"/><ellipse cx="337" cy="161" rx="2" ry="1.5"/><ellipse cx="334" cy="162" rx="1.5" ry="1.2"/>
+  </g>
+  <g fill="#1A0F0A">
+    <ellipse cx="100" cy="70" rx="2.5" ry="1.8"/><ellipse cx="98" cy="72" rx="2" ry="1.5"/><ellipse cx="96" cy="74" rx="1.5" ry="1.2"/>
+  </g>
+</svg>

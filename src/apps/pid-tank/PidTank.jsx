@@ -1,5 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+
+function useIsMobile(breakpoint = 640) {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [breakpoint]);
+  return mobile;
+}
 
 const DEFAULT_TANK_CAPACITY = 1000;
 const MAX_FLOW = 10;
@@ -221,6 +231,7 @@ function TankVisualization({ level, capacity, inflow, outflow, setpoint }) {
 }
 
 export default function PidTank() {
+  const isMobile = useIsMobile();
   const [running, setRunning] = useState(false);
   const [tankCapacity, setTankCapacity] = useState(DEFAULT_TANK_CAPACITY);
   const [level, setLevel] = useState(500);
@@ -367,7 +378,7 @@ export default function PidTank() {
         </p>
       </div>
 
-      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap", flexDirection: isMobile ? "column" : "row" }}>
         {/* Left: Tank Visualization */}
         <div style={{
           flex: "0 0 auto",
@@ -519,8 +530,9 @@ export default function PidTank() {
       <div style={{
         marginTop: 12,
         display: "flex",
-        gap: 20,
+        gap: isMobile ? 8 : 20,
         justifyContent: "center",
+        flexWrap: "wrap",
         fontSize: 12,
         color: "#64748b",
         fontFamily: "monospace",

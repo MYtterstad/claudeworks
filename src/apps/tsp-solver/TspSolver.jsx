@@ -1,5 +1,15 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 
+function useIsMobile(breakpoint = 640) {
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < breakpoint);
+  useEffect(() => {
+    const handler = () => setMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [breakpoint]);
+  return mobile;
+}
+
 // ============================================================
 // BRITISH TOWN NAME GENERATOR
 // ============================================================
@@ -1014,6 +1024,7 @@ function MapView({ cities, userPath, bestRoute, exactRoute, selectedEliteRoute, 
 // ============================================================
 
 export default function TspSolver() {
+  const isMobile = useIsMobile();
   const [numCities, setNumCities] = useState(10);
   const [seed, setSeed] = useState(42);
   const [cities, setCities] = useState(() => generateCities(10, 42));
@@ -1462,7 +1473,7 @@ export default function TspSolver() {
         )}
 
         {/* Top controls row: Map Setup | Your Path | Legend */}
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexDirection: isMobile ? "column" : "row" }}>
           {/* City generation */}
           <div style={{
             background: "#f0fdf4",
@@ -1609,7 +1620,7 @@ export default function TspSolver() {
           <div style={{ fontSize: 12, fontWeight: 700, color: "#991b1b", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
             Genetic Algorithm
           </div>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: isMobile ? 10 : 16, flexWrap: "wrap", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-end" }}>
             {/* Population size */}
             <div style={{ flex: "1 1 140px", minWidth: 120 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>

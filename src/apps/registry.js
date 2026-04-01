@@ -5,6 +5,7 @@ import { lazy } from 'react'
 
 const PidTank = lazy(() => import('./pid-tank/PidTank'))
 const TspSolver = lazy(() => import('./tsp-solver/TspSolver'))
+const AntColony = lazy(() => import('./ant-colony/AntColony'))
 
 const apps = [
   {
@@ -128,6 +129,75 @@ Our exact solver uses DFS through the permutation tree, maintaining a running pa
 **Diversity-Enforced Elitism**
 
 The elite set of size k is filled greedily by fitness, but a maximum of ⌊k · maxSameRatio⌋ slots may contain "similar" individuals (edge similarity > 0.8). Remaining slots go to the best *dissimilar* individuals. This maintains selection pressure while preventing premature convergence.`,
+    },
+  },
+  {
+    id: 'ant-colony',
+    title: 'Ant Colony Optimization',
+    icon: '🐜',
+    category: 'Engineering',
+    summary: 'Watch ants discover food through pheromone trails. Place cookies, stones, and logs, then observe emergent swarm intelligence.',
+    description: `An interactive simulation of ant colony optimization (ACO), inspired by Marco Dorigo's 1992 work. Individual ants forage randomly from their nest, and when one discovers food it leaves a pheromone trail on its way home. Other ants detect the pheromone and are drawn toward it, reinforcing successful paths while pheromone on unused paths evaporates.
+
+Features include a forest glade visual theme with cartoon ants (named individuals with legs, antennae, and carrying animation), depletable cookie food sources, placeable obstacles (stones and logs), an edit mode for adding items, an ant inspector showing the full 8-direction decision table (τ^α, η^β, momentum, score, probability), a math panel with the live transition formula, and colony statistics.
+
+This app demonstrates pheromone-based communication, positive feedback loops, exploration vs. exploitation, and how simple local rules produce globally intelligent behavior.`,
+    path: '/apps/ant-colony',
+    preview: '/previews/ant-colony.svg',
+    version: '0.2',
+    language: 'jsx',
+    tags: ['React', 'Ant Colony Optimization', 'Simulation', 'Swarm Intelligence'],
+    glowColor: 'var(--glow-amber)',
+    component: AntColony,
+    documentation: {
+      howToUse: [
+        { title: 'Start the colony', text: 'Press Start to release the ants from their nest. They will fan out randomly searching for food.' },
+        { title: 'Watch pheromone trails form', text: 'When an ant finds a cookie, it carries a piece back to the nest, leaving a golden food-pheromone trail. Other foraging ants detect this trail and follow it, reinforcing the path.' },
+        { title: 'Place food and obstacles', text: 'Switch to Edit mode (pencil icon) to place cookies, stones, or logs. Try placing a cookie closer to the nest than the existing one — watch how long it takes the colony to discover the shorter path.' },
+        { title: 'Tune parameters', text: 'Use the controls to adjust colony size, simulation speed, α (pheromone importance), β (direction weight), and ρ (evaporation rate). Higher α makes ants follow trails more strongly; higher ρ makes trails fade faster, encouraging exploration.' },
+        { title: 'Inspect individual ants', text: 'Pause the simulation and click any ant to see its decision breakdown — an 8-direction table showing pheromone strength, directional bias, momentum, and resulting probability for each possible move.' },
+      ],
+      mathSimple: `**How do ants find food without a map?**
+
+Real ants are nearly blind and have tiny brains, yet colonies efficiently find and exploit food sources. The secret is pheromone — a chemical scent ants leave on the ground.
+
+**The foraging loop:** An ant wanders randomly until it stumbles upon food. It picks up a piece and heads home, leaving a scent trail. Other ants who cross this trail are attracted to it and follow it to the food. They pick up food and head home too, leaving more scent on the same path. The trail gets stronger and stronger.
+
+**Evaporation is key:** Pheromone slowly fades over time. A long, winding path takes more time to walk, so its pheromone evaporates more between reinforcements. A short, direct path gets reinforced faster than it evaporates. Over time, the colony converges on the shortest route — without any single ant knowing the big picture.
+
+**Two types of trail:** Ants heading home leave "food pheromone" (golden trails) that guides foragers toward food. Ants heading out leave "home pheromone" (blue trails) that helps returning ants find their way back. This two-scent system creates a bidirectional highway.
+
+In our simulation, each ant makes decisions based on pheromone strength and its current momentum (tendency to keep walking forward), producing the characteristic streaming behavior you see in real ant trails.`,
+      mathAdvanced: `**Ant Colony Optimization (Dorigo, 1992)**
+
+Each ant at position i chooses its next cell j with probability:
+
+P(i → j) = [τ(j)]^α × [η(j)]^β × momentum / Σ [τ(k)]^α × [η(k)]^β × momentum_k
+
+where:
+- τ(j) is the pheromone intensity at cell j (food-pheromone for foraging ants, home-pheromone for returning ants)
+- η(j) is a heuristic desirability — in our simulation, this is the dot-product alignment between the direction to j and the direction toward the target (detected food or nest), raised to the power β
+- momentum is a bias toward continuing in the current direction: 1.5 for forward, 0.8 for perpendicular, 0.3 for backward
+- α controls pheromone influence (higher = stronger trail following)
+- β controls heuristic influence (higher = more directed movement toward known targets)
+
+**Pheromone dynamics:**
+
+On each step, an ant deposits pheromone: τ(cell) ← min(τ_max, τ(cell) + deposit). Foraging ants deposit home-pheromone (weaker, 0.3× rate). Returning ants deposit food-pheromone (full rate).
+
+Evaporation occurs globally each tick: τ(cell) ← τ(cell) × (1 - ρ). With ρ = 0.005, each cell loses 0.5% of its pheromone per tick. This exponential decay means a trail that isn't reinforced halves roughly every 139 ticks.
+
+**Exploration floor:**
+
+To prevent stagnation (where one dominant trail captures 100% of traffic), a proportional floor is added: floor = max(maxScore × 0.02, 0.001). This ensures every walkable direction retains at least ~2% relative probability, mimicking the random exploration that real ants exhibit even on established trails.
+
+**Stagnation escape:**
+
+If an ant has been in the same state (foraging or returning) for more than 300 steps without success, it has a 30% chance per step of making a completely random move. This prevents ants from being permanently trapped in pheromone loops.
+
+**Emergence:**
+
+No ant knows the location of food sources (until within detection range of 30 cells). No ant plans a route. Yet the colony collectively discovers and optimizes paths through positive feedback (pheromone reinforcement) balanced by negative feedback (evaporation). This is the hallmark of swarm intelligence — global optimization from purely local interactions.`,
     },
   },
 ]
