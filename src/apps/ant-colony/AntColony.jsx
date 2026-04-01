@@ -691,6 +691,7 @@ export default function AntColony() {
   const [tick, setTick] = useState(0)
   const [controlsOpen, setControlsOpen] = useState(true)
   const [canvasSize, setCanvasSize] = useState({ w: 800, h: 500 })
+  const containerRef = useRef(null)
 
   const cols = useMemo(() => Math.floor(canvasSize.w / CELL), [canvasSize.w])
   const rows = useMemo(() => Math.floor(canvasSize.h / CELL), [canvasSize.h])
@@ -708,8 +709,9 @@ export default function AntColony() {
 
   useEffect(() => {
     const handleResize = () => {
-      const maxW = Math.min(window.innerWidth - 32, 1000)
-      const maxH = Math.min(window.innerHeight * 0.55, 600)
+      const containerW = containerRef.current ? containerRef.current.clientWidth : window.innerWidth - 32
+      const maxW = containerW
+      const maxH = Math.min(window.innerHeight * 0.6, 700)
       const isMobile = window.innerWidth < 640
       const aspect = isMobile ? 1.1 : 1.6
       let w = maxW, h = Math.floor(w / aspect)
@@ -719,7 +721,14 @@ export default function AntColony() {
     }
     handleResize()
     window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
+    // Also observe container size changes
+    const ro = containerRef.current && window.ResizeObserver
+      ? new ResizeObserver(handleResize) : null
+    if (ro && containerRef.current) ro.observe(containerRef.current)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      if (ro) ro.disconnect()
+    }
   }, [])
 
   useEffect(() => { initSim(mapSeed) }, [cols, rows]) // eslint-disable-line
@@ -884,7 +893,7 @@ export default function AntColony() {
   const sim = simRef.current
 
   return (
-    <div style={{ fontFamily: "'Inter', -apple-system, sans-serif", color: '#3A3020', maxWidth: 1040, margin: '0 auto' }}>
+    <div ref={containerRef} style={{ fontFamily: "'Inter', -apple-system, sans-serif", color: '#3A3020', width: '100%' }}>
       {/* Canvas + overlays */}
       <div style={{ position: 'relative', marginBottom: 12, display: 'inline-block' }}>
         <canvas

@@ -59,7 +59,37 @@ where e(k) = setpoint - measured_level.
 
 **Slew rate limiting:** The valve position change is clamped per timestep: |Δvalve| ≤ maxSlew·Δt. This models real actuator dynamics. The auto-tuner accounts for this constraint by reducing Kd when the slew rate is tight — aggressive derivative action is useless if the actuator can't follow it.
 
-**Auto-tune strategy:** Total gain is fixed at 0.85. The Kp/Kd split is determined by tank size (larger tanks need more derivative), and Ki is scaled inversely with tank capacity to prevent slow wind-up in large systems.`,
+**Auto-Tune Algorithm — Full Implementation**
+
+The auto-tuner computes all three gains from two physical parameters: tank capacity (C) and maximum valve slew rate (S).
+
+**Step 1 — Scale factor:**
+
+scale = sqrt(C_default / C)
+
+where C_default = 1000L. This gives scale = 1.0 for the default tank. Smaller tanks yield scale > 1 (tighter control needed), larger tanks yield scale < 1.
+
+**Step 2 — Kp (proportional gain):**
+
+Kp = min(0.05 × scale, TOTAL_GAIN × 0.3)
+
+The base value of 0.05 is scaled up for smaller tanks, but capped at 30% of total gain (0.255) to leave room for derivative action.
+
+**Step 3 — Kd (derivative gain):**
+
+maxUsefulKd = S / 0.5
+Kd = min(TOTAL_GAIN − Kp, maxUsefulKd)
+
+The key insight: Kd generates rapid control changes, but the valve can only move at rate S per tick. If Kd demands changes faster than the valve can deliver, the excess just saturates the actuator and causes limit-cycling. So Kd is capped at maxUsefulKd = S/0.5, which represents the maximum derivative gain the valve can physically respond to.
+
+**Step 4 — Ki (integral gain):**
+
+slewFactor = min(1, S / 2)
+Ki = 0.005 × scale × slewFactor
+
+Ki scales with tank size like Kp, but is additionally reduced when the slew rate is tight. A slow valve cannot correct integral windup quickly — if the integral term builds up, the valve hits its limit and stays there, causing overshoot. By reducing Ki proportionally to slew rate, we prevent this.
+
+**Total gain budget:** TOTAL_GAIN is fixed at 0.85 (proven stable across all tank sizes at S=2). The split is: Kp gets first allocation, Kd gets the remainder (capped by valve physics), and Ki is scaled independently to prevent windup.`,
     },
   },
   {

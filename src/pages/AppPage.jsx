@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Suspense } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import Modal from '../components/Modal'
 import CodeViewer from '../components/CodeViewer'
 import PromptWalkthrough from '../components/PromptWalkthrough'
@@ -152,6 +152,8 @@ function DocumentationSection({ doc }) {
 
 export default function AppPage() {
   const { appId } = useParams()
+  const [searchParams] = useSearchParams()
+  const isAdmin = searchParams.get('admin') === 'claudeworks2026'
   const [showDescription, setShowDescription] = useState(false)
   const [showPrompts, setShowPrompts] = useState(false)
   const [showCode, setShowCode] = useState(false)
@@ -164,17 +166,36 @@ export default function AppPage() {
 
   useEffect(() => {
     const handler = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement)
+      setIsFullscreen(isFS)
     }
     document.addEventListener('fullscreenchange', handler)
-    return () => document.removeEventListener('fullscreenchange', handler)
+    document.addEventListener('webkitfullscreenchange', handler)
+    return () => {
+      document.removeEventListener('fullscreenchange', handler)
+      document.removeEventListener('webkitfullscreenchange', handler)
+    }
   }, [])
 
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement && appAreaRef.current) {
-      appAreaRef.current.requestFullscreen().catch(() => {})
-    } else if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {})
+    const el = appAreaRef.current
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement
+    if (!fsEl && el) {
+      // Try standard, then webkit (Safari), then fall back to maximized mode
+      if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => setIsFullscreen(v => !v))
+      } else if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen()
+      } else {
+        // iOS Safari: no fullscreen API — toggle a maximized state
+        setIsFullscreen(v => !v)
+      }
+    } else if (fsEl) {
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {})
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen()
+    } else {
+      // Toggling out of manual maximized mode
+      setIsFullscreen(false)
     }
   }
 
@@ -220,9 +241,9 @@ export default function AppPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
-      {/* Header bar */}
+      {/* Header bar — hidden in fullscreen/maximized mode */}
       <div style={{
-        display: 'flex',
+        display: isFullscreen ? 'none' : 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '16px 24px',
@@ -247,7 +268,7 @@ export default function AppPage() {
             ← Claudeworks!
           </Link>
           <span style={{ color: 'var(--border-hover)' }}>|</span>
-          <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 800, color: '#ffffff', margin: 0 }}>
             {app.title}
             <span style={{
               fontSize: 11,
@@ -288,14 +309,31 @@ export default function AppPage() {
       <div
         ref={appAreaRef}
         style={{
-          padding: 24,
+          position: 'relative',
+          padding: isFullscreen ? 8 : 24,
           background: isFullscreen ? 'var(--bg-primary)' : 'var(--bg-card)',
           margin: isFullscreen ? 0 : 24,
           borderRadius: isFullscreen ? 0 : 16,
           border: isFullscreen ? 'none' : '1px solid var(--border)',
           overflow: 'auto',
+          minHeight: isFullscreen ? '100vh' : 'auto',
         }}
       >
+        {isFullscreen && (
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              position: 'absolute', top: 8, right: 8, zIndex: 100,
+              padding: '6px 14px', fontSize: 12, fontWeight: 600,
+              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: 8, cursor: 'pointer',
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            Exit Fullscreen
+          </button>
+        )}
         <Suspense fallback={
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
             Loading app...
@@ -309,7 +347,7 @@ export default function AppPage() {
       {app.documentation && <DocumentationSection doc={app.documentation} />}
 
       {/* Comment Section */}
-      <CommentSection appId={appId} />
+      <CommentSection appId={appId} isAdmin={isAdmin} />
 
       {/* Description Modal */}
       <Modal isOpen={showDescription} onClose={() => setShowDescription(false)} title={app.title}>
@@ -364,7 +402,7 @@ export default function AppPage() {
   )
 }
 
-function CommentSection({ appId }) {
+function CommentSection({ appId, isAdmin = false }) {
   const [comments, setComments] = useState([])
   const [name, setName] = useState('')
   const [text, setText] = useState('')
@@ -396,6 +434,12 @@ function CommentSection({ appId }) {
     setText('')
     setSubmitted(true)
     setTimeout(() => setSubmitted(false), 2500)
+  }
+
+  const handleDelete = (commentId) => {
+    const updated = comments.filter(c => c.id !== commentId)
+    setComments(updated)
+    try { localStorage.setItem(`cw-comments-${appId}`, JSON.stringify(updated)) } catch {}
   }
 
   const inputStyle = {
@@ -492,7 +536,22 @@ function CommentSection({ appId }) {
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent-blue)' }}>{c.name}</span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>{c.date}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace" }}>{c.date}</span>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      style={{
+                        padding: '2px 8px', fontSize: 11, fontWeight: 600,
+                        border: '1px solid #ef4444', borderRadius: 4,
+                        background: 'transparent', color: '#ef4444',
+                        cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </div>
               <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 }}>{c.text}</p>
             </div>
