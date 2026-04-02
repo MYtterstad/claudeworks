@@ -268,7 +268,28 @@ function verletStep(bodies, dt, G, softening) {
   }
 }
 
-function checkCollisions(bodies) {
+function createExplosion(x, y, z, explosions, startTime) {
+  const particles = []
+  for (let i = 0; i < 18; i++) {
+    const angle = (Math.PI * 2 * i) / 18
+    const elevation = Math.random() * Math.PI - Math.PI / 2
+    const speed = randomRange(15, 35)
+    particles.push({
+      x, y, z,
+      vx: speed * Math.cos(angle) * Math.cos(elevation),
+      vy: speed * Math.sin(elevation),
+      vz: speed * Math.sin(angle) * Math.cos(elevation),
+      life: 1.0
+    })
+  }
+  explosions.push({
+    x, y, z,
+    particles,
+    startTime
+  })
+}
+
+function checkCollisions(bodies, explosions = [], currentTime = 0) {
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const b1 = bodies[i]
@@ -291,6 +312,12 @@ function checkCollisions(bodies) {
         const c1 = hslToRgb(...b1.color.match(/\d+/g).map(Number))
         const c2 = hslToRgb(...b2.color.match(/\d+/g).map(Number))
         const newColor = `rgb(${Math.round((c1[0] + c2[0]) / 2)}, ${Math.round((c1[1] + c2[1]) / 2)}, ${Math.round((c1[2] + c2[2]) / 2)})`
+
+        // Create explosion at collision point
+        const collisionX = (b1.x * b1.mass + b2.x * b2.mass) / newMass
+        const collisionY = (b1.y * b1.mass + b2.y * b2.mass) / newMass
+        const collisionZ = (b1.z * b1.mass + b2.z * b2.mass) / newMass
+        createExplosion(collisionX, collisionY, collisionZ, explosions, currentTime)
 
         // Keep larger body, mark smaller for removal
         if (b1.mass >= b2.mass) {
@@ -605,8 +632,14 @@ export default function GravitySim() {
   const [azimuth, setAzimuth] = useState(0)
   const [elevation, setElevation] = useState(Math.PI / 12)
 
+  // Zoom and camera
+  const [zoom, setZoom] = useState(1.0)
+
   // Energy state
   const [energy, setEnergy] = useState({ ke: 0, pe: 0, total: 0 })
+
+  // Inspector state
+  const [inspectorData, setInspectorData] = useState(null)
 
   // Refs for animation loop
   const simulationRef = useRef({
@@ -619,7 +652,10 @@ export default function GravitySim() {
     cameraAzimuth: 0,
     cameraElevation: Math.PI / 12,
     dragStart: null,
-    pulsePhase: 0
+    clickStart: null,
+    pulsePhase: 0,
+    explosions: [],
+    zoom: 1.0
   })
 
   const G = 100 * gMultiplier
@@ -654,27 +690,22 @@ export default function GravitySim() {
   // ========================================================================
 
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const handleResize = () => {
-      const w = container.clientWidth
-      const h = container.clientHeight
-      const aspect = w / h
-
-      setAvailHeight(h)
-      if (aspect > 1.2) {
-        setLayoutMode('wide')
-      } else {
-        setLayoutMode('tall')
-      }
+    const computeLayout = () => {
+      const ww = window.innerWidth
+      const wh = window.innerHeight
+      const aH = wh - 120
+      setAvailHeight(aH)
+      setLayoutMode(ww / wh > 1.2 ? 'wide' : 'tall')
     }
-
-    const resizeObserver = new ResizeObserver(handleResize)
-    resizeObserver.observe(container)
-    handleResize()
-
-    return () => resizeObserver.disconnect()
+    computeLayout()
+    const raf = requestAnimationFrame(computeLayout)
+    const timer = setTimeout(computeLayout, 200)
+    window.addEventListener('resize', computeLayout)
+    return () => {
+      window.removeEventListener('resize', computeLayout)
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
   }, [])
 
   // ========================================================================
@@ -700,7 +731,7 @@ export default function GravitySim() {
         while (sim.accumulator > DT) {
           verletStep(sim.bodies, DT, G, SOFTENING)
 
-          sim.bodies = checkCollisions(sim.bodies)
+          sim.bodies = checkCollisions(sim.bodies, sim.explosions, sim.timeElapsed)
           if (sim.bodies.length !== sim.lastMergedCount) {
             sim.mergerCount += 1
             sim.lastMergedCount = sim.bodies.length
@@ -747,7 +778,8 @@ export default function GravitySim() {
 
       drawStarfield(ctx, width, height)
 
-      // 3D projection
+      // 3D projection with zoom
+      const effectiveFocal = 300 * sim.zoom
       const projected = []
       for (let i = 0; i < sim.bodies.length; i++) {
         const b = sim.bodies[i]
@@ -760,7 +792,7 @@ export default function GravitySim() {
 
         const screen = projectToScreen(
           rotated.x, rotated.y, rotated.z,
-          300
+          effectiveFocal
         )
 
         if (screen) {
@@ -809,8 +841,8 @@ export default function GravitySim() {
           const rotated1 = rotatePoint3D(b1.x, b1.y, b1.z, sim.cameraAzimuth, sim.cameraElevation)
           const rotated2 = rotatePoint3D(b2.x, b2.y, b2.z, sim.cameraAzimuth, sim.cameraElevation)
 
-          const screen1 = projectToScreen(rotated1.x, rotated1.y, rotated1.z, 300)
-          const screen2 = projectToScreen(rotated2.x, rotated2.y, rotated2.z, 300)
+          const screen1 = projectToScreen(rotated1.x, rotated1.y, rotated1.z, effectiveFocal)
+          const screen2 = projectToScreen(rotated2.x, rotated2.y, rotated2.z, effectiveFocal)
 
           if (screen1 && screen2) {
             forces.push({
@@ -840,7 +872,7 @@ export default function GravitySim() {
         if (showTrails && b.trail.length > 0) {
           const projectedTrail = b.trail.map(pos => {
             const rotated = rotatePoint3D(pos.x, pos.y, pos.z, sim.cameraAzimuth, sim.cameraElevation)
-            const screen = projectToScreen(rotated.x, rotated.y, rotated.z, 300)
+            const screen = projectToScreen(rotated.x, rotated.y, rotated.z, effectiveFocal)
             if (screen) {
               return {
                 sx: screen.sx + width / 2,
@@ -866,12 +898,41 @@ export default function GravitySim() {
       if (showCOM && sim.bodies.length > 0) {
         const com = computeCenterOfMass(sim.bodies)
         const rotated = rotatePoint3D(com.x, com.y, com.z, sim.cameraAzimuth, sim.cameraElevation)
-        const screen = projectToScreen(rotated.x, rotated.y, rotated.z, 300)
+        const screen = projectToScreen(rotated.x, rotated.y, rotated.z, effectiveFocal)
         if (screen) {
           drawCenterOfMass(ctx, {
             sx: screen.sx + width / 2,
             sy: screen.sy + height / 2
           }, pulseAmount)
+        }
+      }
+
+      // Update and render explosions
+      for (let ei = sim.explosions.length - 1; ei >= 0; ei--) {
+        const exp = sim.explosions[ei]
+        let activeParticles = 0
+        for (let pi = 0; pi < exp.particles.length; pi++) {
+          const p = exp.particles[pi]
+          if (p.life > 0) {
+            p.life -= 1 / 30
+            p.x += p.vx * 0.01
+            p.y += p.vy * 0.01
+            p.z += p.vz * 0.01
+
+            const rotated = rotatePoint3D(p.x, p.y, p.z, sim.cameraAzimuth, sim.cameraElevation)
+            const screen = projectToScreen(rotated.x, rotated.y, rotated.z, effectiveFocal)
+
+            if (screen) {
+              ctx.fillStyle = `rgba(255, 200, 100, ${p.life * 0.8})`
+              ctx.beginPath()
+              ctx.arc(screen.sx + width / 2, screen.sy + height / 2, 2, 0, Math.PI * 2)
+              ctx.fill()
+            }
+            activeParticles++
+          }
+        }
+        if (activeParticles === 0) {
+          sim.explosions.splice(ei, 1)
         }
       }
 
@@ -889,8 +950,8 @@ export default function GravitySim() {
             const rotated1 = rotatePoint3D(selectedBody.x, selectedBody.y, selectedBody.z, sim.cameraAzimuth, sim.cameraElevation)
             const rotated2 = rotatePoint3D(b2.x, b2.y, b2.z, sim.cameraAzimuth, sim.cameraElevation)
 
-            const screen1 = projectToScreen(rotated1.x, rotated1.y, rotated1.z, 300)
-            const screen2 = projectToScreen(rotated2.x, rotated2.y, rotated2.z, 300)
+            const screen1 = projectToScreen(rotated1.x, rotated1.y, rotated1.z, effectiveFocal)
+            const screen2 = projectToScreen(rotated2.x, rotated2.y, rotated2.z, effectiveFocal)
 
             if (screen1 && screen2) {
               ctx.strokeStyle = 'rgba(100, 255, 100, 0.4)'
@@ -915,6 +976,81 @@ export default function GravitySim() {
       ctx.fillText(`Time: ${(sim.timeElapsed).toFixed(2)}s`, 20, height - 35)
       ctx.fillText(`Mergers: ${sim.mergerCount}`, 20, height - 20)
 
+      // Legend overlay (bottom-right)
+      if (showVelocity || showForces || showCOM || showTrails) {
+        const legendX = width - 150
+        const legendY = height - 130
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+        ctx.fillRect(legendX - 10, legendY - 10, 150, 130)
+
+        ctx.fillStyle = '#cccccc'
+        ctx.font = 'bold 11px "Inter", sans-serif'
+        ctx.fillText('Legend', legendX, legendY + 5)
+
+        let legendLine = legendY + 20
+        const lineHeight = 18
+
+        if (showVelocity) {
+          ctx.strokeStyle = 'rgba(100, 200, 255, 0.8)'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(legendX, legendLine - 4)
+          ctx.lineTo(legendX + 8, legendLine - 4)
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.moveTo(legendX + 8, legendLine - 4)
+          ctx.lineTo(legendX + 6, legendLine - 7)
+          ctx.lineTo(legendX + 5, legendLine - 2)
+          ctx.fill()
+          ctx.fillStyle = '#aaaaaa'
+          ctx.font = '10px "Inter", sans-serif'
+          ctx.fillText('Velocity', legendX + 15, legendLine)
+          legendLine += lineHeight
+        }
+
+        if (showForces) {
+          ctx.strokeStyle = 'rgba(220, 140, 60, 0.8)'
+          ctx.lineWidth = 2
+          ctx.setLineDash([2, 4])
+          ctx.beginPath()
+          ctx.moveTo(legendX, legendLine - 4)
+          ctx.lineTo(legendX + 12, legendLine - 4)
+          ctx.stroke()
+          ctx.setLineDash([])
+          ctx.fillStyle = '#aaaaaa'
+          ctx.font = '10px "Inter", sans-serif'
+          ctx.fillText('Forces', legendX + 15, legendLine)
+          legendLine += lineHeight
+        }
+
+        if (showCOM) {
+          ctx.fillStyle = 'rgba(255, 200, 50, 0.8)'
+          ctx.beginPath()
+          ctx.moveTo(legendX + 6, legendLine - 8)
+          ctx.lineTo(legendX + 12, legendLine - 2)
+          ctx.lineTo(legendX + 6, legendLine + 4)
+          ctx.lineTo(legendX, legendLine - 2)
+          ctx.closePath()
+          ctx.fill()
+          ctx.fillStyle = '#aaaaaa'
+          ctx.font = '10px "Inter", sans-serif'
+          ctx.fillText('Center of Mass', legendX + 15, legendLine)
+          legendLine += lineHeight
+        }
+
+        if (showTrails) {
+          ctx.fillStyle = 'rgba(100, 150, 255, 0.8)'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(legendX, legendLine - 2)
+          ctx.lineTo(legendX + 12, legendLine - 2)
+          ctx.stroke()
+          ctx.fillStyle = '#aaaaaa'
+          ctx.font = '10px "Inter", sans-serif'
+          ctx.fillText('Trails', legendX + 15, legendLine)
+        }
+      }
+
       // Edit mode indicator
       if (isEditMode) {
         ctx.strokeStyle = '#ff0000'
@@ -928,7 +1064,7 @@ export default function GravitySim() {
     animate()
 
     return () => cancelAnimationFrame(animationId)
-  }, [isRunning, timeScale, G, showTrails, showVelocity, showForces, showCOM, showEnergy, selectedPlanet])
+  }, [isRunning, timeScale, G, showTrails, showVelocity, showForces, showCOM, showEnergy, selectedPlanet, zoom])
 
   // ========================================================================
   // INTERACTION HANDLERS
@@ -939,33 +1075,10 @@ export default function GravitySim() {
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
-    if (isEditMode) {
-      // Add new body
-      const width = canvasRef.current.width
-      const height = canvasRef.current.height
+    // Store click position for both edit and inspector modes
+    simulationRef.current.clickStart = { x, y }
 
-      const screenX = x - width / 2
-      const screenY = y - height / 2
-
-      // Reverse project
-      const focalLength = 300
-      const screenZ = 0
-      const depth = focalLength
-      const worldX = (screenX * depth) / focalLength
-      const worldY = (screenY * depth) / focalLength
-
-      const mass = randomRange(minSize, maxSize)
-      const radius = randomRange(4, 8)
-      const color = randomColor()
-      let name
-      do {
-        name = PLANET_NAMES[Math.floor(Math.random() * PLANET_NAMES.length)]
-      } while (simulationRef.current.bodies.some(b => b.name === name))
-
-      const newBody = createBody(worldX, worldY, 0, mass, radius, color, name, false)
-      simulationRef.current.bodies.push(newBody)
-      setBodies([...simulationRef.current.bodies])
-    } else {
+    if (!isEditMode) {
       // Drag to rotate camera
       simulationRef.current.dragStart = { x, y }
     }
@@ -993,13 +1106,116 @@ export default function GravitySim() {
     simulationRef.current.dragStart = { x, y }
   }
 
-  const handleCanvasMouseUp = () => {
-    simulationRef.current.dragStart = null
+  const handleCanvasWheel = (e) => {
+    e.preventDefault()
+    const sim = simulationRef.current
+    const delta = e.deltaY > 0 ? 1.05 : 0.95
+    const newZoom = Math.max(0.3, Math.min(5.0, sim.zoom * delta))
+    sim.zoom = newZoom
+    setZoom(newZoom)
+  }
 
-    // Check for planet click
-    if (!isEditMode && !simulationRef.current.dragStart) {
-      // Click detection can be added here
+  const handleCanvasMouseUp = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const sim = simulationRef.current
+
+    // Check if it was a click (not a drag)
+    const clickStart = sim.clickStart
+    const wasClick = clickStart && Math.abs(x - clickStart.x) < 5 && Math.abs(y - clickStart.y) < 5
+
+    if (isEditMode && wasClick) {
+      // Add new body in edit mode
+      const width = canvasRef.current.width
+      const height = canvasRef.current.height
+      const screenX = clickStart.x - width / 2
+      const screenY = clickStart.y - height / 2
+      const focalLength = 300 * sim.zoom
+      const depth = focalLength
+      const worldX = (screenX * depth) / focalLength
+      const worldY = (screenY * depth) / focalLength
+
+      const mass = randomRange(minSize, maxSize)
+      const radius = randomRange(4, 8)
+      const color = randomColor()
+      let name
+      do {
+        name = PLANET_NAMES[Math.floor(Math.random() * PLANET_NAMES.length)]
+      } while (sim.bodies.some(b => b.name === name))
+
+      const newBody = createBody(worldX, worldY, 0, mass, radius, color, name, false)
+      sim.bodies.push(newBody)
+      setBodies([...sim.bodies])
+    } else if (!isEditMode && wasClick) {
+      // Planet inspector in normal mode
+      const width = canvasRef.current.width
+      const height = canvasRef.current.height
+      const focalLength = 300 * sim.zoom
+
+      let closestIdx = -1
+      let closestDist = 999999
+
+      for (let i = 0; i < sim.bodies.length; i++) {
+        const b = sim.bodies[i]
+        const rotated = rotatePoint3D(b.x, b.y, b.z, sim.cameraAzimuth, sim.cameraElevation)
+        const screen = projectToScreen(rotated.x, rotated.y, rotated.z, focalLength)
+
+        if (screen) {
+          const sx = screen.sx + width / 2
+          const sy = screen.sy + height / 2
+          const dx = sx - clickStart.x
+          const dy = sy - clickStart.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+
+          if (dist <= b.radius + 3 && dist < closestDist) {
+            closestIdx = i
+            closestDist = dist
+          }
+        }
+      }
+
+      if (closestIdx >= 0) {
+        const selectedBody = sim.bodies[closestIdx]
+        const influences = []
+
+        for (let i = 0; i < sim.bodies.length; i++) {
+          if (i === closestIdx) continue
+          const b2 = sim.bodies[i]
+          const dx = b2.x - selectedBody.x
+          const dy = b2.y - selectedBody.y
+          const dz = b2.z - selectedBody.z
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+          if (dist > 0.1) {
+            const force = (G * selectedBody.mass * b2.mass) / (dist * dist)
+            influences.push({
+              name: b2.name,
+              force,
+              distance: dist
+            })
+          }
+        }
+
+        influences.sort((a, b) => b.force - a.force)
+
+        setSelectedPlanet(closestIdx)
+        setInspectorData({
+          name: selectedBody.name,
+          mass: selectedBody.mass,
+          radius: selectedBody.radius,
+          velocity: Math.sqrt(selectedBody.vx ** 2 + selectedBody.vy ** 2 + selectedBody.vz ** 2),
+          influences: influences.slice(0, 4),
+          screenX: width / 2 + (Math.random() * 200 - 100),
+          screenY: height / 2 + (Math.random() * 200 - 100)
+        })
+      } else {
+        setSelectedPlanet(null)
+        setInspectorData(null)
+      }
     }
+
+    simulationRef.current.dragStart = null
+    simulationRef.current.clickStart = null
   }
 
   // ========================================================================
@@ -1034,7 +1250,7 @@ export default function GravitySim() {
     marginBottom: 6,
     fontSize: 10,
     fontWeight: 600,
-    color: '#5C4E3A',
+    color: '#3A3020',
     textTransform: 'uppercase',
   }
 
@@ -1044,7 +1260,6 @@ export default function GravitySim() {
 
   const container = containerRef.current
   const containerWidth = container?.clientWidth || 800
-  const containerHeight = containerHeight || 600
 
   let canvasWidth, canvasHeight, panelWidth, panelHeight, panelBottom
 
@@ -1065,7 +1280,7 @@ export default function GravitySim() {
       ref={containerRef}
       style={{
         width: '100%',
-        height: '100vh',
+        height: availHeight,
         display: 'flex',
         flexDirection: layoutMode === 'wide' ? 'row' : 'column',
         background: '#1a1a1a',
@@ -1091,6 +1306,7 @@ export default function GravitySim() {
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
           onMouseLeave={handleCanvasMouseUp}
+          onWheel={handleCanvasWheel}
           style={{
             display: 'block',
             width: '100%',
@@ -1139,6 +1355,74 @@ export default function GravitySim() {
             {isEditMode ? 'Done' : 'Edit'}
           </button>
         </div>
+
+        {/* Planet Inspector Popup */}
+        {inspectorData && (
+          <div
+            style={{
+              position: 'absolute',
+              left: inspectorData.screenX,
+              top: inspectorData.screenY,
+              background: '#F8F6F0',
+              border: '1px solid #D9D3C7',
+              borderRadius: 8,
+              padding: 12,
+              minWidth: 220,
+              zIndex: 200,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+              fontFamily: "'Inter', sans-serif",
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#3A3020' }}>
+                {inspectorData.name}
+              </div>
+              <button
+                onClick={() => {
+                  setInspectorData(null)
+                  setSelectedPlanet(null)
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 16,
+                  color: '#888',
+                  padding: 0,
+                  width: 20,
+                  height: 20,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ fontSize: 10, marginBottom: 8, color: '#3A3020' }}>
+              <div style={{ marginBottom: 4 }}>
+                <strong>Mass:</strong> {inspectorData.mass.toFixed(2)}
+              </div>
+              <div style={{ marginBottom: 4 }}>
+                <strong>Radius:</strong> {inspectorData.radius.toFixed(2)}
+              </div>
+              <div>
+                <strong>Velocity:</strong> {inspectorData.velocity.toFixed(2)}
+              </div>
+            </div>
+
+            {inspectorData.influences.length > 0 && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: '#5C4E3A', marginBottom: 6, textTransform: 'uppercase' }}>
+                  Top Forces
+                </div>
+                {inspectorData.influences.map((inf, idx) => (
+                  <div key={idx} style={{ fontSize: 9, color: '#3A3020', marginBottom: 3 }}>
+                    {inf.name}: {inf.force.toFixed(2)} (d: {inf.distance.toFixed(1)})
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Control Panel */}
@@ -1147,27 +1431,28 @@ export default function GravitySim() {
           flex: layoutMode === 'wide' ? '1 0 auto' : '0 0 auto',
           width: layoutMode === 'wide' ? panelWidth : '100%',
           height: layoutMode === 'wide' ? '100%' : panelHeight,
-          background: '#2a2a2a',
-          borderLeft: layoutMode === 'wide' ? '1px solid #444' : 'none',
-          borderTop: layoutMode === 'tall' ? '1px solid #444' : 'none',
+          background: '#F8F6F0',
+          borderLeft: layoutMode === 'wide' ? '1px solid #D9D3C7' : 'none',
+          borderTop: layoutMode === 'tall' ? '1px solid #D9D3C7' : 'none',
           overflowY: layoutMode === 'wide' ? 'auto' : 'hidden',
           display: 'flex',
-          flexDirection: layoutMode === 'wide' ? 'column' : 'row',
+          flexDirection: layoutMode === 'wide' ? 'column' : 'column',
           padding: 10,
           gap: 10,
         }}
       >
         {/* Tab buttons (tall mode) */}
         {layoutMode === 'tall' && (
-          <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid #444', paddingBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid #D9D3C7', paddingBottom: 8 }}>
             {['controls', 'math', 'stats'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setControlTab(tab)}
                 style={{
                   ...btnSm,
-                  background: controlTab === tab ? '#D9D3C7' : '#F0EDE5',
+                  background: controlTab === tab ? '#E8E0D5' : '#F0EDE5',
                   fontWeight: controlTab === tab ? 700 : 600,
+                  color: '#3A3020',
                 }}
               >
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -1246,7 +1531,7 @@ export default function GravitySim() {
             <div style={{ marginBottom: 12 }}>
               <div style={labelStyle}>Startup Mode</div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#3A3020' }}>
                   <input
                     type="radio"
                     checked={orbitalMode}
@@ -1254,7 +1539,7 @@ export default function GravitySim() {
                   />
                   Orbital
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#3A3020' }}>
                   <input
                     type="radio"
                     checked={!orbitalMode}
@@ -1267,7 +1552,7 @@ export default function GravitySim() {
 
             <div style={labelStyle}>Visualization</div>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11, color: '#3A3020' }}>
               <input
                 type="checkbox"
                 checked={showTrails}
@@ -1276,7 +1561,7 @@ export default function GravitySim() {
               Trails
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11, color: '#3A3020' }}>
               <input
                 type="checkbox"
                 checked={showVelocity}
@@ -1285,7 +1570,7 @@ export default function GravitySim() {
               Velocity Vectors
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11, color: '#3A3020' }}>
               <input
                 type="checkbox"
                 checked={showForces}
@@ -1294,7 +1579,7 @@ export default function GravitySim() {
               Gravitational Forces
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11, color: '#3A3020' }}>
               <input
                 type="checkbox"
                 checked={showCOM}
@@ -1303,7 +1588,7 @@ export default function GravitySim() {
               Center of Mass
             </label>
 
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#3A3020' }}>
               <input
                 type="checkbox"
                 checked={showEnergy}
@@ -1318,29 +1603,29 @@ export default function GravitySim() {
         {(layoutMode === 'wide' || controlTab === 'math') && (
           <div style={panelStyle}>
             <div style={labelStyle}>Newton's Law of Gravitation</div>
-            <div style={{ fontSize: 10, color: '#7a6e5c', marginBottom: 10, fontFamily: 'monospace' }}>
+            <div style={{ fontSize: 10, color: '#5C4E3A', marginBottom: 10, fontFamily: 'monospace' }}>
               F = G × m₁ × m₂ / r²
             </div>
 
-            <div style={{ fontSize: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 10, marginBottom: 4, color: '#3A3020' }}>
               <strong>G (current):</strong> {(G).toFixed(2)}
             </div>
 
-            <div style={{ fontSize: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 10, marginBottom: 4, color: '#3A3020' }}>
               <strong>Integration:</strong> Velocity Verlet
             </div>
 
-            <div style={{ fontSize: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 10, marginBottom: 4, color: '#3A3020' }}>
               <strong>Softening:</strong> {SOFTENING} units
             </div>
 
-            <div style={{ fontSize: 10, marginBottom: 4 }}>
+            <div style={{ fontSize: 10, marginBottom: 4, color: '#3A3020' }}>
               <strong>Time Step:</strong> {DT} s
             </div>
 
             {bodies.length > 0 && (
               <>
-                <div style={{ marginTop: 12, fontSize: 10 }}>
+                <div style={{ marginTop: 12, fontSize: 10, color: '#3A3020' }}>
                   <strong>Total Pairs:</strong> {(bodies.length * (bodies.length - 1)) / 2}
                 </div>
               </>
@@ -1353,24 +1638,24 @@ export default function GravitySim() {
           <div style={panelStyle}>
             <div style={labelStyle}>System Statistics</div>
 
-            <div style={{ fontSize: 10, marginBottom: 6 }}>
+            <div style={{ fontSize: 10, marginBottom: 6, color: '#3A3020' }}>
               <strong>Total Mass:</strong> {bodies.reduce((sum, b) => sum + b.mass, 0).toFixed(2)}
             </div>
 
-            <div style={{ fontSize: 10, marginBottom: 6 }}>
+            <div style={{ fontSize: 10, marginBottom: 6, color: '#3A3020' }}>
               <strong>Mergers:</strong> {mergerCount}
             </div>
 
             {bodies.length > 0 && (
               <>
-                <div style={{ fontSize: 10, marginBottom: 6 }}>
+                <div style={{ fontSize: 10, marginBottom: 6, color: '#3A3020' }}>
                   <strong>Avg Velocity:</strong>{' '}
                   {(
                     bodies.reduce((sum, b) => sum + Math.sqrt(b.vx ** 2 + b.vy ** 2 + b.vz ** 2), 0) / bodies.length
                   ).toFixed(2)}
                 </div>
 
-                <div style={{ fontSize: 10, marginBottom: 6 }}>
+                <div style={{ fontSize: 10, marginBottom: 6, color: '#3A3020' }}>
                   <strong>Max Mass:</strong>{' '}
                   {Math.max(...bodies.map(b => b.mass)).toFixed(2)}
                 </div>
@@ -1379,7 +1664,7 @@ export default function GravitySim() {
 
             {showEnergy && (
               <>
-                <div style={{ marginTop: 12, fontSize: 10 }}>
+                <div style={{ marginTop: 12, fontSize: 10, color: '#3A3020' }}>
                   <div style={{ marginBottom: 3 }}>
                     <strong>KE:</strong> {energy.ke.toFixed(2)}
                   </div>
