@@ -124,8 +124,9 @@ function generateSystem(
   const usedNames = new Set()
 
   // Create bodies with random positions in sphere
+  // Minimum distance of 60 from center to avoid immediate collision with sun
   for (let i = 0; i < numBodies; i++) {
-    const r = randomRange(0, 200)
+    const r = randomRange(60, 350)
     const theta = Math.random() * Math.PI * 2
     const phi = Math.acos(2 * Math.random() - 1)
 
@@ -489,14 +490,16 @@ function drawTrail(ctx, trail, color) {
   ctx.globalAlpha = 1.0
 }
 
-function drawVelocityVector(ctx, sx, sy, vx, vy, speed, scale = 0.02) {
+function drawVelocityVector(ctx, sx, sy, vx, vy, speed, scale = 2.0) {
   if (speed < 0.1) return
 
   const len = Math.sqrt(vx * vx + vy * vy)
   if (len === 0) return
 
-  const ux = (vx / len) * speed * scale
-  const uy = (vy / len) * speed * scale
+  // Arrow length: min 15px, max 60px, scaled by speed
+  const rawLen = Math.min(60, Math.max(15, speed * scale))
+  const ux = (vx / len) * rawLen
+  const uy = (vy / len) * rawLen
 
   ctx.strokeStyle = 'rgba(100, 200, 255, 0.6)'
   ctx.lineWidth = 2
@@ -506,12 +509,14 @@ function drawVelocityVector(ctx, sx, sy, vx, vy, speed, scale = 0.02) {
   ctx.stroke()
 
   // Arrowhead
-  const arrowSize = 5
+  const arrowSize = 8
   const angle = Math.atan2(uy, ux)
+  ctx.fillStyle = 'rgba(100, 200, 255, 0.7)'
   ctx.beginPath()
   ctx.moveTo(sx + ux, sy + uy)
   ctx.lineTo(sx + ux - arrowSize * Math.cos(angle - Math.PI / 6), sy + uy - arrowSize * Math.sin(angle - Math.PI / 6))
   ctx.lineTo(sx + ux - arrowSize * Math.cos(angle + Math.PI / 6), sy + uy - arrowSize * Math.sin(angle + Math.PI / 6))
+  ctx.closePath()
   ctx.fill()
 }
 
@@ -888,7 +893,7 @@ export default function GravitySim() {
         // Velocity vectors
         if (showVelocity) {
           const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy + b.vz * b.vz)
-          drawVelocityVector(ctx, proj.screen.sx, proj.screen.sy, b.vx, b.vy, speed, 0.5)
+          drawVelocityVector(ctx, proj.screen.sx, proj.screen.sy, b.vx, b.vy, speed, 2.0)
         }
 
         ctx.globalAlpha = 1.0
@@ -1126,15 +1131,25 @@ export default function GravitySim() {
     const wasClick = clickStart && Math.abs(x - clickStart.x) < 5 && Math.abs(y - clickStart.y) < 5
 
     if (isEditMode && wasClick) {
-      // Add new body in edit mode
+      // Add new body at click position — reverse-project screen to world coords
       const width = canvasRef.current.width
       const height = canvasRef.current.height
       const screenX = clickStart.x - width / 2
       const screenY = clickStart.y - height / 2
-      const focalLength = 300 * sim.zoom
-      const depth = focalLength
-      const worldX = (screenX * depth) / focalLength
-      const worldY = (screenY * depth) / focalLength
+      const focalLength = 300 * (sim.zoom || 1)
+
+      // Reverse projection: screen coords to camera-space coords at z=0 plane
+      // In camera space, the point projects as sx = x*f/(z+f), so at z=0: x = sx
+      const camX = screenX
+      const camY = screenY
+      const camZ = 0
+
+      // Reverse camera rotation to get world coords
+      // Camera applies: rotateY(azimuth) then rotateX(elevation)
+      // Reverse: rotateX(-elevation) then rotateY(-azimuth)
+      const az = -(sim.cameraAzimuth || 0)
+      const el = -(sim.cameraElevation || 0)
+      const rotated = rotatePoint3D(camX, camY, camZ, az, el)
 
       const mass = randomRange(minSize, maxSize)
       const radius = randomRange(4, 8)
@@ -1144,7 +1159,7 @@ export default function GravitySim() {
         name = PLANET_NAMES[Math.floor(Math.random() * PLANET_NAMES.length)]
       } while (sim.bodies.some(b => b.name === name))
 
-      const newBody = createBody(worldX, worldY, 0, mass, radius, color, name, false)
+      const newBody = createBody(rotated.x, rotated.y, rotated.z, mass, radius, color, name, false)
       sim.bodies.push(newBody)
       setBodies([...sim.bodies])
     } else if (!isEditMode && wasClick) {
