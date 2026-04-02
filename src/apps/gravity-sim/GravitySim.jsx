@@ -290,11 +290,12 @@ function createExplosion(x, y, z, explosions, startTime) {
   })
 }
 
-function checkCollisions(bodies, explosions = [], currentTime = 0) {
+function checkCollisions(bodies, explosions = [], currentTime = 0, bounce = false) {
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const b1 = bodies[i]
       const b2 = bodies[j]
+      if (b1.merged || b2.merged) continue
 
       const dx = b2.x - b1.x
       const dy = b2.y - b1.y
@@ -302,41 +303,87 @@ function checkCollisions(bodies, explosions = [], currentTime = 0) {
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
 
       if (dist < b1.radius + b2.radius) {
-        // Merge: conserve momentum and mass
-        const newMass = b1.mass + b2.mass
-        const newVx = (b1.mass * b1.vx + b2.mass * b2.vx) / newMass
-        const newVy = (b1.mass * b1.vy + b2.mass * b2.vy) / newMass
-        const newVz = (b1.mass * b1.vz + b2.mass * b2.vz) / newMass
-        const newRadius = Math.cbrt(b1.radius ** 3 + b2.radius ** 3)
+        if (bounce) {
+          // Elastic bounce — conserve momentum and kinetic energy
+          const nx = dx / dist
+          const ny = dy / dist
+          const nz = dz / dist
 
-        // Blend colors (simple average in RGB space)
-        const c1 = hslToRgb(...b1.color.match(/\d+/g).map(Number))
-        const c2 = hslToRgb(...b2.color.match(/\d+/g).map(Number))
-        const newColor = `rgb(${Math.round((c1[0] + c2[0]) / 2)}, ${Math.round((c1[1] + c2[1]) / 2)}, ${Math.round((c1[2] + c2[2]) / 2)})`
+          // Relative velocity along collision normal
+          const dvx = b1.vx - b2.vx
+          const dvy = b1.vy - b2.vy
+          const dvz = b1.vz - b2.vz
+          const dvDotN = dvx * nx + dvy * ny + dvz * nz
 
-        // Create explosion at collision point
-        const collisionX = (b1.x * b1.mass + b2.x * b2.mass) / newMass
-        const collisionY = (b1.y * b1.mass + b2.y * b2.mass) / newMass
-        const collisionZ = (b1.z * b1.mass + b2.z * b2.mass) / newMass
-        createExplosion(collisionX, collisionY, collisionZ, explosions, currentTime)
+          // Only bounce if approaching
+          if (dvDotN > 0) {
+            const m1 = b1.mass
+            const m2 = b2.mass
+            const totalMass = m1 + m2
 
-        // Keep larger body, mark smaller for removal
-        if (b1.mass >= b2.mass) {
-          b1.mass = newMass
-          b1.vx = newVx
-          b1.vy = newVy
-          b1.vz = newVz
-          b1.radius = newRadius
-          b1.color = newColor
-          b2.merged = true
+            // Elastic collision impulse
+            const impulse = (2 * dvDotN) / totalMass
+
+            b1.vx -= impulse * m2 * nx
+            b1.vy -= impulse * m2 * ny
+            b1.vz -= impulse * m2 * nz
+            b2.vx += impulse * m1 * nx
+            b2.vy += impulse * m1 * ny
+            b2.vz += impulse * m1 * nz
+
+            // Separate overlapping bodies
+            const overlap = (b1.radius + b2.radius) - dist
+            const sep = overlap / 2 + 0.5
+            b1.x -= sep * nx
+            b1.y -= sep * ny
+            b1.z -= sep * nz
+            b2.x += sep * nx
+            b2.y += sep * ny
+            b2.z += sep * nz
+
+            // Small spark at collision point
+            const cx = (b1.x + b2.x) / 2
+            const cy = (b1.y + b2.y) / 2
+            const cz = (b1.z + b2.z) / 2
+            createExplosion(cx, cy, cz, explosions, currentTime)
+          }
         } else {
-          b2.mass = newMass
-          b2.vx = newVx
-          b2.vy = newVy
-          b2.vz = newVz
-          b2.radius = newRadius
-          b2.color = newColor
-          b1.merged = true
+          // Merge: conserve momentum and mass
+          const newMass = b1.mass + b2.mass
+          const newVx = (b1.mass * b1.vx + b2.mass * b2.vx) / newMass
+          const newVy = (b1.mass * b1.vy + b2.mass * b2.vy) / newMass
+          const newVz = (b1.mass * b1.vz + b2.mass * b2.vz) / newMass
+          const newRadius = Math.cbrt(b1.radius ** 3 + b2.radius ** 3)
+
+          // Blend colors (simple average in RGB space)
+          const c1 = hslToRgb(...b1.color.match(/\d+/g).map(Number))
+          const c2 = hslToRgb(...b2.color.match(/\d+/g).map(Number))
+          const newColor = `rgb(${Math.round((c1[0] + c2[0]) / 2)}, ${Math.round((c1[1] + c2[1]) / 2)}, ${Math.round((c1[2] + c2[2]) / 2)})`
+
+          // Create explosion at collision point
+          const collisionX = (b1.x * b1.mass + b2.x * b2.mass) / newMass
+          const collisionY = (b1.y * b1.mass + b2.y * b2.mass) / newMass
+          const collisionZ = (b1.z * b1.mass + b2.z * b2.mass) / newMass
+          createExplosion(collisionX, collisionY, collisionZ, explosions, currentTime)
+
+          // Keep larger body, mark smaller for removal
+          if (b1.mass >= b2.mass) {
+            b1.mass = newMass
+            b1.vx = newVx
+            b1.vy = newVy
+            b1.vz = newVz
+            b1.radius = newRadius
+            b1.color = newColor
+            b2.merged = true
+          } else {
+            b2.mass = newMass
+            b2.vx = newVx
+            b2.vy = newVy
+            b2.vz = newVz
+            b2.radius = newRadius
+            b2.color = newColor
+            b1.merged = true
+          }
         }
       }
     }
@@ -632,6 +679,7 @@ export default function GravitySim() {
   const [showForces, setShowForces] = useState(false)
   const [showCOM, setShowCOM] = useState(false)
   const [showEnergy, setShowEnergy] = useState(false)
+  const [bounceMode, setBounceMode] = useState(false)
 
   // Camera
   const [azimuth, setAzimuth] = useState(0)
@@ -736,7 +784,7 @@ export default function GravitySim() {
         while (sim.accumulator > DT) {
           verletStep(sim.bodies, DT, G, SOFTENING)
 
-          sim.bodies = checkCollisions(sim.bodies, sim.explosions, sim.timeElapsed)
+          sim.bodies = checkCollisions(sim.bodies, sim.explosions, sim.timeElapsed, bounceMode)
           if (sim.bodies.length !== sim.lastMergedCount) {
             sim.mergerCount += 1
             sim.lastMergedCount = sim.bodies.length
@@ -755,6 +803,49 @@ export default function GravitySim() {
         if (showEnergy) {
           const e = computeEnergy(sim.bodies, G)
           setEnergy(e)
+        }
+
+        // Real-time inspector update
+        if (selectedPlanet !== null && selectedPlanet < sim.bodies.length) {
+          const sb = sim.bodies[selectedPlanet]
+          const influences = []
+          for (let i = 0; i < sim.bodies.length; i++) {
+            if (i === selectedPlanet) continue
+            const b2 = sim.bodies[i]
+            const dx = b2.x - sb.x
+            const dy = b2.y - sb.y
+            const dz = b2.z - sb.z
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+            if (dist > 0.1) {
+              const force = (G * sb.mass * b2.mass) / (dist * dist)
+              influences.push({ name: b2.name, force, distance: dist })
+            }
+          }
+          influences.sort((a, b) => b.force - a.force)
+
+          // Compute screen position for the inspector to track the planet
+          const rotated = rotatePoint3D(sb.x, sb.y, sb.z, sim.cameraAzimuth, sim.cameraElevation)
+          const effectiveFocalInsp = 300 * sim.zoom
+          const screen = projectToScreen(rotated.x, rotated.y, rotated.z, effectiveFocalInsp)
+          const canvas = canvasRef.current
+          const cw = canvas ? canvas.width : 800
+          const ch = canvas ? canvas.height : 600
+          const sx = screen ? screen.sx + cw / 2 : cw / 2
+          const sy = screen ? screen.sy + ch / 2 : ch / 2
+
+          setInspectorData({
+            name: sb.name,
+            mass: sb.mass,
+            radius: sb.radius,
+            velocity: Math.sqrt(sb.vx ** 2 + sb.vy ** 2 + sb.vz ** 2),
+            influences: influences.slice(0, 4),
+            screenX: Math.min(cw - 240, Math.max(10, sx + 20)),
+            screenY: Math.min(ch - 180, Math.max(10, sy - 60)),
+          })
+        } else if (selectedPlanet !== null && selectedPlanet >= sim.bodies.length) {
+          // Planet was merged/removed
+          setSelectedPlanet(null)
+          setInspectorData(null)
         }
       }
 
@@ -1069,7 +1160,7 @@ export default function GravitySim() {
     animate()
 
     return () => cancelAnimationFrame(animationId)
-  }, [isRunning, timeScale, G, showTrails, showVelocity, showForces, showCOM, showEnergy, selectedPlanet, zoom])
+  }, [isRunning, timeScale, G, showTrails, showVelocity, showForces, showCOM, showEnergy, selectedPlanet, zoom, bounceMode])
 
   // ========================================================================
   // INTERACTION HANDLERS
@@ -1213,6 +1304,13 @@ export default function GravitySim() {
 
         influences.sort((a, b) => b.force - a.force)
 
+        // Compute screen position for the selected planet
+        const rotSel = rotatePoint3D(selectedBody.x, selectedBody.y, selectedBody.z, sim.cameraAzimuth, sim.cameraElevation)
+        const effFocal = 300 * sim.zoom
+        const screenSel = projectToScreen(rotSel.x, rotSel.y, rotSel.z, effFocal)
+        const selSx = screenSel ? screenSel.sx + width / 2 : width / 2
+        const selSy = screenSel ? screenSel.sy + height / 2 : height / 2
+
         setSelectedPlanet(closestIdx)
         setInspectorData({
           name: selectedBody.name,
@@ -1220,8 +1318,8 @@ export default function GravitySim() {
           radius: selectedBody.radius,
           velocity: Math.sqrt(selectedBody.vx ** 2 + selectedBody.vy ** 2 + selectedBody.vz ** 2),
           influences: influences.slice(0, 4),
-          screenX: width / 2 + (Math.random() * 200 - 100),
-          screenY: height / 2 + (Math.random() * 200 - 100)
+          screenX: Math.min(width - 240, Math.max(10, selSx + 20)),
+          screenY: Math.min(height - 180, Math.max(10, selSy - 60)),
         })
       } else {
         setSelectedPlanet(null)
@@ -1610,6 +1708,17 @@ export default function GravitySim() {
                 onChange={(e) => setShowEnergy(e.target.checked)}
               />
               Energy Display
+            </label>
+
+            <div style={{ ...labelStyle, marginTop: 12 }}>Collision Mode</div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontSize: 11, color: '#3A3020' }}>
+              <input
+                type="checkbox"
+                checked={bounceMode}
+                onChange={(e) => setBounceMode(e.target.checked)}
+              />
+              Elastic Bounce (pool ball)
             </label>
           </div>
         )}
