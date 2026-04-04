@@ -1,9 +1,8 @@
+// Force this route to be dynamic — prevents Next.js from evaluating it at build time
+export const dynamic = 'force-dynamic'
+
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-
-// NOTE: We use dynamic import() for @/lib/db inside authorize() to avoid
-// pulling better-sqlite3 into the webpack bundle at build time.
-// The static import was causing Vercel builds to fail during "Collecting page data".
 
 const handler = NextAuth({
   providers: [

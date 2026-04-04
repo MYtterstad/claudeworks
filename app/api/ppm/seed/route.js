@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { db, clearAllData, createPortfolio, createProject, addPhase, addProjectToPortfolio } from '@/lib/db'
 

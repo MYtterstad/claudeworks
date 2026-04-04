@@ -1988,6 +1988,7 @@ function AuditTrailTab({ entityType, entityId }) {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [filterAction, setFilterAction] = useState('all')
 
   useEffect(() => {
     setLoading(true)
@@ -1999,23 +2000,59 @@ function AuditTrailTab({ entityType, entityId }) {
 
   if (loading) return <p style={{ color: 'var(--text-dim)' }}>Loading...</p>
 
+  // Get unique actions for filter
+  const actions = [...new Set(entries.map(e => e.action))]
+  const filtered = filterAction === 'all' ? entries : entries.filter(e => e.action === filterAction)
+
+  // Action color mapping
+  const actionColors = {
+    created: 'var(--green)', updated: 'var(--accent)', deleted: 'var(--red)',
+    phase_updated: 'var(--cyan)', phase_advanced: 'var(--yellow)',
+    snapshot_created: 'var(--purple)', project_added: 'var(--green)',
+    project_removed: 'var(--orange)'
+  }
+
   return (
     <div>
-      <button className={styles.btn} onClick={() => setRefreshKey(k => k + 1)}
-        style={{ marginBottom: '1rem', fontSize: '0.8rem' }}>
-        ↻ Refresh
-      </button>
-      {!entries.length && <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No audit entries yet.</p>}
+      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <button className={styles.btn} onClick={() => setRefreshKey(k => k + 1)}
+          style={{ fontSize: '0.8rem' }}>
+          ↻ Refresh
+        </button>
+        <select
+          value={filterAction} onChange={e => setFilterAction(e.target.value)}
+          style={{
+            padding: '0.4rem 0.75rem', fontSize: '0.8rem', border: '1px solid var(--border)',
+            borderRadius: '0.375rem', background: 'var(--surface)', color: 'var(--text)'
+          }}>
+          <option value="all">All actions ({entries.length})</option>
+          {actions.map(a => (
+            <option key={a} value={a}>{a} ({entries.filter(e => e.action === a).length})</option>
+          ))}
+        </select>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          Showing {filtered.length} of {entries.length} entries
+        </span>
+      </div>
+      {!filtered.length && <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No audit entries{filterAction !== 'all' ? ' for this filter' : ' yet'}.</p>}
       <div className={styles.auditList}>
-        {entries.map((e, i) => (
+        {filtered.map((e, i) => (
           <div key={i} className={styles.auditEntry}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-              <span className={styles.auditAction}>{e.action}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
+              <span style={{
+                display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '0.25rem',
+                fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em',
+                background: `color-mix(in srgb, ${actionColors[e.action] || 'var(--accent)'} 15%, transparent)`,
+                color: actionColors[e.action] || 'var(--accent)'
+              }}>{e.action}</span>
               <span className={styles.auditTimestamp}>{new Date(e.timestamp).toLocaleString()}</span>
             </div>
             {e.field && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.25rem' }}>
-                <strong>{e.field}</strong>: {e.old_value ?? '(empty)'} → {e.new_value ?? '(empty)'}
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)', marginBottom: '0.25rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--border)' }}>
+                <strong style={{ color: 'var(--text)' }}>{e.field}</strong>:&nbsp;
+                <span style={{ color: 'var(--red)', textDecoration: 'line-through' }}>{e.old_value ?? '(empty)'}</span>
+                &nbsp;→&nbsp;
+                <span style={{ color: 'var(--green)' }}>{e.new_value ?? '(empty)'}</span>
               </div>
             )}
             {e.details && <div className={styles.auditDetails}>{e.details}</div>}
@@ -2050,6 +2087,203 @@ function ProjectDetailTabs({ project, onTabChange, currentTab }) {
           onClick={() => onTabChange(tab.id)}>{tab.label}</button>
       ))}
     </div>
+  )
+}
+
+
+// ============================================================================
+// Advance Phase Modal
+// ============================================================================
+
+// ============================================================================
+// Project Input Form — with lock/unlock for actual phases
+// ============================================================================
+
+function ProjectInputForm({ project, canAdvance, onAdvance, onUpdateField, onUpdatePhaseField }) {
+  const [actualsUnlocked, setActualsUnlocked] = useState(false)
+
+  return (
+    <>
+      {/* General Info */}
+      <div className={styles.section}>
+        <h2>General Information</h2>
+        <div className={styles.paramsGrid}>
+          <div className={styles.param}>
+            <label>Name</label>
+            <EditableInput type="text" value={project.name || ''} onCommit={v => onUpdateField('name', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Therapeutic Area</label>
+            <EditableInput type="text" value={project.ta || ''} onCommit={v => onUpdateField('ta', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Modality</label>
+            <EditableInput type="text" value={project.modality || ''} onCommit={v => onUpdateField('modality', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Source</label>
+            <EditableInput type="text" value={project.source || ''} onCommit={v => onUpdateField('source', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Indication</label>
+            <EditableInput type="text" value={project.indication || ''} onCommit={v => onUpdateField('indication', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Mode of Action</label>
+            <EditableInput type="text" value={project.mode_of_action || ''} onCommit={v => onUpdateField('modeOfAction', v)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Commercial Parameters */}
+      <div className={styles.section}>
+        <h2>Commercial Parameters</h2>
+        <div className={styles.paramsGrid}>
+          <div className={styles.param}>
+            <label>Process Start Date</label>
+            <EditableInput type="number" step="0.01" value={project.process_start_date || 0}
+              onCommit={v => onUpdateField('processStartDate', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Peak Year Sales ($M)</label>
+            <EditableInput type="number" step="1" value={project.peak_year_sales || 0}
+              onCommit={v => onUpdateField('peakYearSales', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>Time to Peak (years)</label>
+            <EditableInput type="number" step="0.5" value={project.time_to_peak_years || 0}
+              onCommit={v => onUpdateField('timeToPeakYears', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>LoE Year</label>
+            <EditableInput type="number" value={project.loe_year || 0}
+              onCommit={v => onUpdateField('loeYear', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>COGS Rate</label>
+            <EditableInput type="number" step="0.01" value={project.cogs_rate || 0}
+              onCommit={v => onUpdateField('cogsRate', v)} />
+          </div>
+          <div className={styles.param}>
+            <label>M&S Rate</label>
+            <EditableInput type="number" step="0.01" value={project.ms_rate || 0}
+              onCommit={v => onUpdateField('msRate', v)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Development Phases */}
+      <div className={styles.section}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h2 style={{ margin: 0 }}>Development Phases</h2>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            {canAdvance && (
+              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={onAdvance}>
+                Advance Phase
+              </button>
+            )}
+            {project.phases?.some(p => p.is_actual) && (
+              <button
+                className={styles.btn}
+                onClick={() => setActualsUnlocked(!actualsUnlocked)}
+                style={{
+                  fontSize: '0.75rem',
+                  color: actualsUnlocked ? 'var(--yellow)' : 'var(--text-dim)',
+                  borderColor: actualsUnlocked ? 'var(--yellow)' : undefined
+                }}
+              >
+                {actualsUnlocked ? '🔓 Lock Actuals' : '🔒 Unlock Actuals'}
+              </button>
+            )}
+          </div>
+        </div>
+        <div className={styles.tableContainer}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Phase</th>
+                <th style={{ textAlign: 'center' }}>Status</th>
+                <th style={{ textAlign: 'right' }}>Duration (mo)</th>
+                <th style={{ textAlign: 'right' }}>PoS</th>
+                <th style={{ textAlign: 'right' }}>Internal Cost ($M)</th>
+                <th style={{ textAlign: 'right' }}>External Cost ($M)</th>
+                <th style={{ textAlign: 'right' }}>Total Cost ($M)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {project.phases?.map((phase, idx) => {
+                const isLocked = phase.is_actual && !actualsUnlocked
+                const totalCost = (phase.internal_cost || 0) + (phase.external_cost || 0)
+                return (
+                  <tr key={phase.id} className={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}
+                    style={{ opacity: isLocked ? 0.7 : 1 }}>
+                    <td className={styles.nameCell}>
+                      <span className={styles.badge} style={{
+                        background: (PHASE_BADGE_STYLES[phase.phase] || {}).bg,
+                        color: (PHASE_BADGE_STYLES[phase.phase] || {}).color
+                      }}>{PHASE_LABELS[phase.phase]}</span>
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{
+                        fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.5rem', borderRadius: '0.25rem',
+                        background: phase.is_actual ? 'rgba(52,211,153,0.15)' : 'rgba(108,140,255,0.15)',
+                        color: phase.is_actual ? 'var(--green)' : 'var(--accent)'
+                      }}>
+                        {phase.is_actual ? 'ACTUAL' : 'PLANNED'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {isLocked
+                        ? <span style={{ color: 'var(--text-dim)' }}>{phase.duration_months || 0}</span>
+                        : <EditableInput type="number" step="1" value={phase.duration_months || 0} className={styles.cellInput} style={{ width: '80px' }}
+                            onCommit={v => onUpdatePhaseField(phase.id, 'durationMonths', parseInt(v))} />
+                      }
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {isLocked
+                        ? <span style={{ color: 'var(--text-dim)' }}>{((phase.pos || 0.5) * 100).toFixed(0)}%</span>
+                        : <EditableInput type="number" step="0.01" min="0" max="1" value={phase.pos || 0.5} className={styles.cellInput} style={{ width: '70px' }}
+                            onCommit={v => onUpdatePhaseField(phase.id, 'pos', parseFloat(v))} />
+                      }
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {isLocked
+                        ? <span style={{ color: 'var(--text-dim)' }}>{(phase.internal_cost || 0).toFixed(1)}</span>
+                        : <EditableInput type="number" step="0.1" value={phase.internal_cost || 0} className={styles.cellInput} style={{ width: '90px' }}
+                            onCommit={v => onUpdatePhaseField(phase.id, 'internalCost', parseFloat(v))} />
+                      }
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {isLocked
+                        ? <span style={{ color: 'var(--text-dim)' }}>{(phase.external_cost || 0).toFixed(1)}</span>
+                        : <EditableInput type="number" step="0.1" value={phase.external_cost || 0} className={styles.cellInput} style={{ width: '90px' }}
+                            onCommit={v => onUpdatePhaseField(phase.id, 'externalCost', parseFloat(v))} />
+                      }
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--text)' }}>
+                      {totalCost.toFixed(1)}
+                    </td>
+                  </tr>
+                )
+              })}
+              {/* Total row */}
+              <tr style={{ borderTop: '2px solid var(--border)' }}>
+                <td colSpan={4} style={{ fontWeight: 700, textAlign: 'right', paddingRight: '1rem' }}>Total</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                  {project.phases?.reduce((s, p) => s + (p.internal_cost || 0), 0).toFixed(1)}
+                </td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                  {project.phases?.reduce((s, p) => s + (p.external_cost || 0), 0).toFixed(1)}
+                </td>
+                <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent)' }}>
+                  ${getTotalCost(project).toFixed(1)}M
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -2744,147 +2978,87 @@ export default function PpmApp() {
 
   // ── Project Detail View ──
   if (view === 'project' && selectedProject) {
+    const projFinancials = computeProjectFinancials(selectedProject, portfolio?.discount_rate || 0.1)
+    const projEnpv = projFinancials ? projFinancials.npv : 0
+    const projCumPos = projFinancials ? projFinancials.cumPos : getCumulativePos(selectedProject.phases || [])
+    const projLaunch = projFinancials ? projFinancials.launch : getLaunchDate(selectedProject)
+    const projEnpvPos = projFinancials ? projFinancials.launchNPV : 0
+    const projRemCost = getTotalRemainingCost(selectedProject)
+
     return (
       <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
-        <div className={styles.header}>
-          <div className={styles.headerInfo}>
-            <h1>{selectedProject.name}</h1>
-            <p>{selectedProject.ta} · {selectedProject.modality} · {selectedProject.source}</p>
+        {/* Sticky: header + KPI metrics + tab bar */}
+        <div className={styles.stickyTop}>
+          <div className={styles.header}>
+            <div className={styles.headerInfo}>
+              <h1>{selectedProject.name}
+                <span className={styles.badge} style={{
+                  background: (PHASE_BADGE_STYLES[selectedProject.current_phase] || {}).bg,
+                  color: (PHASE_BADGE_STYLES[selectedProject.current_phase] || {}).color,
+                  marginLeft: '0.75rem', verticalAlign: 'middle'
+                }}>{selectedProject.current_phase}</span>
+              </h1>
+              <p>{selectedProject.ta} · {selectedProject.modality} · {selectedProject.source} · {selectedProject.indication || ''}</p>
+            </div>
+            <div className={styles.headerActions}>
+              <button className={styles.themeToggle} onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+                {theme === 'dark' ? '☀️' : '🌙'} {theme === 'dark' ? 'Light' : 'Dark'}
+              </button>
+              <button className={styles.backBtn} onClick={handleBack}>← Back</button>
+            </div>
           </div>
-          <div className={styles.headerActions}>
-            <button className={styles.themeToggle} onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
-              {theme === 'dark' ? '☀️' : '🌙'} {theme === 'dark' ? 'Light' : 'Dark'}
-            </button>
-            <button className={styles.backBtn} onClick={handleBack}>← Back</button>
-          </div>
-        </div>
 
-        <ProjectDetailTabs project={selectedProject} onTabChange={setProjectTab} currentTab={projectTab} />
+          {/* KPI Metrics Row */}
+          <div className={styles.summaryGrid} style={{ marginBottom: 0 }}>
+            <div className={styles.summaryCard}>
+              <div className={styles.summaryValue} style={{ color: projEnpv >= 0 ? 'var(--green)' : 'var(--red)' }}>${projEnpv.toFixed(0)}M</div>
+              <div className={styles.summaryLabel}>eNPV</div>
+            </div>
+            <div className={styles.summaryCard}>
+              <div className={styles.summaryValue} style={{ color: 'var(--green)' }}>${projEnpvPos.toFixed(0)}M</div>
+              <div className={styles.summaryLabel}>eNPV+</div>
+            </div>
+            <div className={styles.summaryCard}>
+              <div className={styles.summaryValue} style={{ color: 'var(--red)' }}>-${projRemCost.toFixed(0)}M</div>
+              <div className={styles.summaryLabel}>eNPV−</div>
+            </div>
+            <div className={styles.summaryCard}>
+              <div className={styles.summaryValue} style={{ color: 'var(--accent)' }}>{(projCumPos * 100).toFixed(1)}%</div>
+              <div className={styles.summaryLabel}>P(Launch)</div>
+            </div>
+            <div className={styles.summaryCard}>
+              <div className={styles.summaryValue} style={{ color: 'var(--cyan)' }}>{projLaunch ? Math.floor(projLaunch) : 'N/A'}</div>
+              <div className={styles.summaryLabel}>Exp. Launch</div>
+            </div>
+            <div className={styles.summaryCard}>
+              <div className={styles.summaryValue} style={{ color: 'var(--yellow)' }}>${(selectedProject.peak_year_sales || 0).toFixed(0)}M</div>
+              <div className={styles.summaryLabel}>Peak Revenue</div>
+            </div>
+          </div>
+
+          <ProjectDetailTabs project={selectedProject} onTabChange={setProjectTab} currentTab={projectTab} />
+        </div>{/* end stickyTop */}
 
         {projectTab === 'detail' && (
-          <>
-            {/* Overview */}
-            <div className={styles.section}>
-              <h2>Overview</h2>
-              <div className={styles.infoGrid}>
-                <div className={styles.field}>
-                  <label>Current Phase</label>
-                  <div style={{ padding: '0.5rem 0.75rem' }}>
-                    <span className={styles.badge} style={{
-                      background: (PHASE_BADGE_STYLES[selectedProject.current_phase] || {}).bg,
-                      color: (PHASE_BADGE_STYLES[selectedProject.current_phase] || {}).color
-                    }}>{selectedProject.current_phase}</span>
-                  </div>
-                </div>
-                <div className={styles.field}>
-                  <label>Process Start Date</label>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text)' }}>
-                    {selectedProject.process_start_date ? decimalYearToDate(selectedProject.process_start_date) : 'N/A'}
-                  </div>
-                </div>
-                <div className={styles.field}>
-                  <label>Peak Year Sales</label>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text)' }}>${(selectedProject.peak_year_sales || 0).toFixed(0)}M</div>
-                </div>
-              </div>
-              {canAdvance && (
-                <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setShowAdvancePhase(true)}
-                  style={{ marginTop: '1rem' }}>
-                  Advance Phase
-                </button>
-              )}
-            </div>
+          <ProjectInputForm
+            project={selectedProject}
+            canAdvance={canAdvance}
+            onAdvance={() => setShowAdvancePhase(true)}
+            onUpdateField={updateField}
+            onUpdatePhaseField={updatePhaseField}
+          />
+        )}
 
-            {/* Parameters */}
-            <div className={styles.section}>
-              <h2>Parameters</h2>
-              <div className={styles.paramsGrid}>
-                <div className={styles.param}>
-                  <label>Therapeutic Area</label>
-                  <EditableInput type="text" value={selectedProject.ta || ''} onCommit={v => updateField('ta', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>Modality</label>
-                  <EditableInput type="text" value={selectedProject.modality || ''} onCommit={v => updateField('modality', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>Source</label>
-                  <EditableInput type="text" value={selectedProject.source || ''} onCommit={v => updateField('source', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>Peak Year Sales ($M)</label>
-                  <EditableInput type="number" step="1" value={selectedProject.peak_year_sales || 0}
-                    onCommit={v => updateField('peakYearSales', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>Time to Peak (years)</label>
-                  <EditableInput type="number" step="0.5" value={selectedProject.time_to_peak_years || 0}
-                    onCommit={v => updateField('timeToPeakYears', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>LoE Year</label>
-                  <EditableInput type="number" value={selectedProject.loe_year || 0}
-                    onCommit={v => updateField('loeYear', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>COGS Rate</label>
-                  <EditableInput type="number" step="0.01" value={selectedProject.cogs_rate || 0}
-                    onCommit={v => updateField('cogsRate', v)} />
-                </div>
-                <div className={styles.param}>
-                  <label>M&S Rate</label>
-                  <EditableInput type="number" step="0.01" value={selectedProject.ms_rate || 0}
-                    onCommit={v => updateField('msRate', v)} />
-                </div>
-              </div>
-            </div>
+        {projectTab === 'cashflow' && (
+          <ProjectCashFlowTab project={selectedProject} discountRate={portfolio?.discount_rate || 0.1} />
+        )}
 
-            {/* Phases */}
-            <div className={styles.section}>
-              <h2>Development Phases</h2>
-              <div className={styles.tableContainer}>
-                <table className={styles.table}>
-                  <thead>
-                    <tr>
-                      <th>Phase</th><th style={{ textAlign: 'right' }}>Duration (mo)</th>
-                      <th style={{ textAlign: 'right' }}>PoS</th><th style={{ textAlign: 'right' }}>Internal Cost</th>
-                      <th style={{ textAlign: 'right' }}>External Cost</th><th>Actual?</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedProject.phases?.map((phase, idx) => (
-                      <tr key={phase.id} className={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}>
-                        <td className={styles.nameCell}>{PHASE_LABELS[phase.phase]}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <EditableInput type="number" step="1" value={phase.duration_months || 0} className={styles.cellInput} style={{ width: '80px' }}
-                            onCommit={v => updatePhaseField(phase.id, 'durationMonths', parseInt(v))} />
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <EditableInput type="number" step="0.01" min="0" max="1" value={phase.pos || 0.5} className={styles.cellInput} style={{ width: '70px' }}
-                            onCommit={v => updatePhaseField(phase.id, 'pos', parseFloat(v))} />
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <EditableInput type="number" step="0.1" value={phase.internal_cost || 0} className={styles.cellInput} style={{ width: '90px' }}
-                            onCommit={v => updatePhaseField(phase.id, 'internalCost', parseFloat(v))} />
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <EditableInput type="number" step="0.1" value={phase.external_cost || 0} className={styles.cellInput} style={{ width: '90px' }}
-                            onCommit={v => updatePhaseField(phase.id, 'externalCost', parseFloat(v))} />
-                        </td>
-                        <td style={{ textAlign: 'center', fontSize: '0.8rem' }}>
-                          {phase.is_actual ? 'Yes' : 'No'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+        {projectTab === 'pnl' && (
+          <ProjectPLTab project={selectedProject} discountRate={portfolio?.discount_rate || 0.1} />
         )}
 
         {projectTab === 'tree' && (
-          <DecisionTreeTab project={selectedProject} />
+          <DecisionTreeTab project={selectedProject} discountRate={portfolio?.discount_rate || 0.1} />
         )}
 
         {projectTab === 'snapshots' && (

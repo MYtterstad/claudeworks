@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 import { getPortfolio } from '@/lib/db'
 import fs from 'fs'

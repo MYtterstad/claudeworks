@@ -1,4 +1,5 @@
-// Dynamic import for @/lib/db to avoid pulling better-sqlite3 into the build
+// Force this route to be dynamic — prevents Next.js from evaluating it at build time
+export const dynamic = 'force-dynamic'
 
 export async function POST(request) {
   try {

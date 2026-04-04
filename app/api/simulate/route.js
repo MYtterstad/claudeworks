@@ -8,6 +8,8 @@
 //   2. Captario SUM simulation engine (external API call)
 //   3. Dedicated Python service on Railway/Fly.io
 
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
 
 export async function POST(request) {
