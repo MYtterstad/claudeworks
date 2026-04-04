@@ -1258,148 +1258,495 @@ function HistoryTab({ entityType, entityId }) {
 // Decision Tree Tab
 // ============================================================================
 
-function DecisionTreeTab({ project }) {
-  if (!project || !project.phases) return <p style={{ color: 'var(--text-dim)' }}>No phases available.</p>
+// ============================================================================
+// Compute detailed project financials (cash flow, P&L, decision tree data)
+// ============================================================================
 
+function computeProjectFinancials(project, discountRate = 0.1) {
+  if (!project || !project.phases) return null
   const launch = getLaunchDate(project)
+  if (!launch) return null
+
   const cumPos = getCumulativePos(project.phases)
-  const expectedLaunchDate = launch ? decimalYearToDate(launch) : 'N/A'
+  const peak = project.peak_year_sales || 0
+  const timeToPeak = project.time_to_peak_years || 3
+  const loe = project.loe_year || (launch + 10)
+  const cogsRate = project.cogs_rate || 0.05
+  const msRate = project.ms_rate || 0.08
+  const startYear = Math.floor(project.process_start_date || 2026)
+  const endYear = Math.ceil(loe) + 3
 
-  const nodes = []
+  const years = []
+  const data = []
 
-  // START node
-  nodes.push({
-    type: 'start',
-    label: 'START',
-    pos: 0
-  })
+  for (let yr = startYear; yr <= endYear; yr++) {
+    years.push(yr)
+    const t = yr - startYear
+    const discount = Math.pow(1 + discountRate, t)
 
-  // Phase nodes
-  let accDuration = 0
-  project.phases.forEach((phase, idx) => {
-    const phasePos = phase.pos || 0.5
-    const failProb = 1 - phasePos
-    nodes.push({
-      type: 'phase',
-      label: PHASE_LABELS[phase.phase] || phase.phase,
-      phase: phase.phase,
-      pos: phasePos,
-      failurePos: failProb,
-      duration: phase.duration_months || 0,
-      cost: (phase.internal_cost || 0) + (phase.external_cost || 0),
-      index: idx
+    // Revenue model — ramp to peak, hold until LoE, decline after
+    let grossRevenue = 0
+    if (yr >= Math.floor(launch)) {
+      const yearsPostLaunch = yr - Math.floor(launch)
+      if (yr <= loe) {
+        grossRevenue = yearsPostLaunch < timeToPeak ? peak * (yearsPostLaunch / timeToPeak) : peak
+      } else {
+        grossRevenue = peak * Math.pow(0.8, yr - loe)
+      }
+    }
+
+    const cogs = grossRevenue * cogsRate
+    const ms = grossRevenue * msRate
+    const netRevenue = grossRevenue - cogs - ms
+
+    // Dev costs — spread phase cost evenly across the phase duration
+    let devCosts = 0
+    let accYears = 0
+    for (const phase of (project.phases || [])) {
+      const dur = (phase.duration_months || 0) / 12
+      const phaseStart = (project.process_start_date || startYear) + accYears
+      const phaseEnd = phaseStart + dur
+      if (yr >= Math.floor(phaseStart) && yr < Math.ceil(phaseEnd)) {
+        const phaseCost = (phase.internal_cost || 0) + (phase.external_cost || 0)
+        devCosts += dur > 0 ? phaseCost / Math.ceil(dur) : phaseCost
+      }
+      accYears += dur
+    }
+
+    // Risk-adjusted values
+    const raRevenue = grossRevenue * cumPos
+    const raCogs = cogs * cumPos
+    const raMs = ms * cumPos
+    const raNetRevenue = netRevenue * cumPos
+    const netCF = raNetRevenue - devCosts
+
+    data.push({
+      year: yr, grossRevenue, cogs, ms, netRevenue, devCosts,
+      raRevenue, raCogs, raMs, raNetRevenue, netCF,
+      discountedNetCF: netCF / discount,
+      // P&L rows
+      grossProfit: raRevenue - raCogs,
+      ebit: raRevenue - raCogs - raMs - devCosts
     })
-    accDuration += (phase.duration_months || 0) / 12
+  }
+
+  // Cumulative cash flow
+  let cumCF = 0
+  data.forEach(d => { cumCF += d.netCF; d.cumulativeCF = cumCF })
+
+  // NPV
+  const npv = data.reduce((s, d) => s + d.discountedNetCF, 0)
+
+  // Decision tree nodes (backward induction)
+  const phases = project.phases || []
+  const totalCost = phases.reduce((s, p) => s + (p.internal_cost || 0) + (p.external_cost || 0), 0)
+
+  // Compute launch NPV (NPV if all remaining phases succeed)
+  const launchNPV = data.reduce((s, d) => {
+    const t = d.year - startYear
+    const disc = Math.pow(1 + discountRate, t)
+    return s + ((d.grossRevenue * (1 - cogsRate - msRate)) - d.devCosts) / disc
+  }, 0)
+
+  // Backward induction through phases
+  const treeNodes = phases.map((phase, idx) => {
+    const pos = phase.pos || 0.5
+    const cost = (phase.internal_cost || 0) + (phase.external_cost || 0)
+    let cumDevCost = 0
+    for (let i = 0; i <= idx; i++) {
+      cumDevCost += (phases[i].internal_cost || 0) + (phases[i].external_cost || 0)
+    }
+    let cumProb = 1
+    for (let i = 0; i <= idx; i++) {
+      cumProb *= (phases[i].pos || 0.5)
+    }
+    return { phase: phase.phase, pos, cost, cumDevCost, cumProb, isActual: phase.is_actual }
   })
 
-  // LAUNCH/FAIL nodes
-  nodes.push({
-    type: 'success',
-    label: 'LAUNCH',
-    cumPos: cumPos,
-    expectedDate: expectedLaunchDate,
-    peakSales: project.peak_year_sales || 0
-  })
+  // Backward induction: compute eNPV at each node
+  for (let i = treeNodes.length - 1; i >= 0; i--) {
+    const node = treeNodes[i]
+    const successValue = i === treeNodes.length - 1 ? launchNPV : treeNodes[i + 1].enpv
+    const failValue = -node.cumDevCost
+    node.enpv = node.pos * successValue + (1 - node.pos) * failValue
+    node.successValue = successValue
+    node.failValue = failValue
+  }
 
-  nodes.push({
-    type: 'failure',
-    label: 'FAIL',
-    failureProb: (1 - cumPos).toFixed(2)
-  })
+  return { years, data, npv, cumPos, launch, launchNPV, treeNodes, startYear, endYear, peak, loe }
+}
 
-  const nodeWidth = 130
-  const nodeHeight = 120
-  const gapX = 50
-  const gapY = 80
+
+// ============================================================================
+// Project Expected Cash Flow Tab
+// ============================================================================
+
+function ProjectCashFlowTab({ project, discountRate }) {
+  const fin = useMemo(() => computeProjectFinancials(project, discountRate), [project, discountRate])
+
+  if (!fin) return <p style={{ color: 'var(--text-dim)' }}>Insufficient data — set process start date and phases.</p>
+
+  // Filter to active years (any non-zero value)
+  const activeData = fin.data.filter(d => d.raRevenue > 0.1 || d.devCosts > 0.1 || Math.abs(d.netCF) > 0.1)
+  if (!activeData.length) return <p style={{ color: 'var(--text-dim)' }}>No cash flow data to display.</p>
+
+  const maxVal = Math.max(...activeData.map(d => Math.max(d.raRevenue, d.devCosts, Math.abs(d.netCF), Math.abs(d.cumulativeCF))))
+  const chartH = 280
+  const barW = Math.max(12, Math.min(40, 600 / activeData.length))
+  const chartW = Math.max(600, activeData.length * (barW * 4 + 16) + 80)
 
   return (
-    <div className={styles.treeContainer}>
-      <div className={styles.section} style={{ padding: '1rem', minWidth: '100%' }}>
-        <div style={{ display: 'flex', gap: 0, alignItems: 'flex-start', overflow: 'auto', minHeight: nodeHeight + gapY * 2 }}>
-          {/* START */}
-          <div style={{ position: 'relative', width: nodeWidth, flexShrink: 0 }}>
-            <div className={styles.treeNode} style={{
-              background: 'var(--accent-bg)',
-              borderColor: 'var(--accent)',
-              fontSize: '0.8rem',
-              fontWeight: 700,
-              padding: '1rem'
-            }}>
-              START
-            </div>
+    <div className={styles.section}>
+      <h2 style={{ marginBottom: '1rem' }}>Expected Cash Flow <span style={{ fontSize: '0.7em', color: 'var(--text-muted)', fontWeight: 400 }}>(risk-adjusted)</span></h2>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap', fontSize: '0.75rem' }}>
+        {[
+          { color: 'var(--green)', label: 'Revenue (RA)' },
+          { color: 'var(--red)', label: 'Dev Costs' },
+          { color: 'var(--orange)', label: 'COGS (RA)' },
+          { color: 'var(--yellow)', label: 'M&S (RA)' },
+          { color: 'var(--accent)', label: 'Net CF' },
+          { color: 'var(--cyan)', label: 'Cumulative CF', dash: true },
+        ].map(l => (
+          <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div style={{ width: 14, height: 3, background: l.color, borderRadius: 2, borderBottom: l.dash ? '2px dashed ' + l.color : 'none' }} />
+            <span style={{ color: 'var(--text-dim)' }}>{l.label}</span>
           </div>
+        ))}
+      </div>
 
-          {/* Arrow */}
-          <div className={styles.treeArrow} style={{ minWidth: gapX }} />
+      {/* SVG Chart */}
+      <div style={{ overflowX: 'auto' }}>
+        <svg width={chartW} height={chartH + 60} style={{ display: 'block' }}>
+          {/* Zero line */}
+          <line x1={50} y1={chartH / 2 + 20} x2={chartW - 10} y2={chartH / 2 + 20}
+            stroke="var(--border)" strokeWidth={1} />
 
-          {/* Phase nodes with parallel failure paths */}
-          <div style={{ position: 'relative' }}>
-            {project.phases?.map((phase, idx) => {
-              const phasePos = phase.pos || 0.5
-              const failurePos = 1 - phasePos
+          {activeData.map((d, i) => {
+            const x = 60 + i * (barW * 4 + 16)
+            const zeroY = chartH / 2 + 20
+            const scale = maxVal > 0 ? (chartH / 2 - 10) / maxVal : 1
+
+            // Bars going up (revenue) and down (costs)
+            const revH = d.raRevenue * scale
+            const devH = d.devCosts * scale
+            const cogsH = d.raCogs * scale
+            const msH = d.raMs * scale
+
+            return (
+              <g key={d.year}>
+                {/* Revenue bar (up) */}
+                <rect x={x} y={zeroY - revH} width={barW} height={Math.max(revH, 0.5)}
+                  fill="var(--green)" opacity={0.8} rx={2} />
+                {/* Dev cost bar (down) */}
+                <rect x={x + barW + 2} y={zeroY} width={barW} height={Math.max(devH, 0.5)}
+                  fill="var(--red)" opacity={0.8} rx={2} />
+                {/* COGS bar (down, stacked after dev) */}
+                <rect x={x + barW * 2 + 4} y={zeroY} width={barW} height={Math.max(cogsH, 0.5)}
+                  fill="var(--orange)" opacity={0.7} rx={2} />
+                {/* M&S bar (down) */}
+                <rect x={x + barW * 3 + 6} y={zeroY} width={barW} height={Math.max(msH, 0.5)}
+                  fill="var(--yellow)" opacity={0.7} rx={2} />
+                {/* Year label */}
+                <text x={x + barW * 2} y={chartH + 55} textAnchor="middle"
+                  fill="var(--text-muted)" fontSize={10}>{d.year}</text>
+              </g>
+            )
+          })}
+
+          {/* Net CF line */}
+          <polyline fill="none" stroke="var(--accent)" strokeWidth={2}
+            points={activeData.map((d, i) => {
+              const x = 60 + i * (barW * 4 + 16) + barW * 2
+              const zeroY = chartH / 2 + 20
+              const scale = maxVal > 0 ? (chartH / 2 - 10) / maxVal : 1
+              return `${x},${zeroY - d.netCF * scale}`
+            }).join(' ')} />
+
+          {/* Cumulative CF line (dashed) */}
+          <polyline fill="none" stroke="var(--cyan)" strokeWidth={2} strokeDasharray="6,3"
+            points={activeData.map((d, i) => {
+              const x = 60 + i * (barW * 4 + 16) + barW * 2
+              const zeroY = chartH / 2 + 20
+              const scale = maxVal > 0 ? (chartH / 2 - 10) / maxVal : 1
+              return `${x},${zeroY - d.cumulativeCF * scale}`
+            }).join(' ')} />
+
+          {/* Dots on Net CF */}
+          {activeData.map((d, i) => {
+            const x = 60 + i * (barW * 4 + 16) + barW * 2
+            const zeroY = chartH / 2 + 20
+            const scale = maxVal > 0 ? (chartH / 2 - 10) / maxVal : 1
+            return <circle key={i} cx={x} cy={zeroY - d.netCF * scale} r={3} fill="var(--accent)" />
+          })}
+        </svg>
+      </div>
+
+      {/* Summary table */}
+      <div style={{ marginTop: '1.5rem', overflowX: 'auto' }}>
+        <table className={styles.table} style={{ fontSize: '0.75rem' }}>
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th style={{ textAlign: 'right' }}>Revenue (RA)</th>
+              <th style={{ textAlign: 'right' }}>Dev Costs</th>
+              <th style={{ textAlign: 'right' }}>COGS (RA)</th>
+              <th style={{ textAlign: 'right' }}>M&S (RA)</th>
+              <th style={{ textAlign: 'right' }}>Net CF</th>
+              <th style={{ textAlign: 'right' }}>Cumulative CF</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeData.map((d, i) => (
+              <tr key={d.year} className={i % 2 === 0 ? styles.rowEven : styles.rowOdd}>
+                <td>{d.year}</td>
+                <td style={{ textAlign: 'right', color: 'var(--green)' }}>${d.raRevenue.toFixed(1)}M</td>
+                <td style={{ textAlign: 'right', color: 'var(--red)' }}>${d.devCosts.toFixed(1)}M</td>
+                <td style={{ textAlign: 'right', color: 'var(--orange)' }}>${d.raCogs.toFixed(1)}M</td>
+                <td style={{ textAlign: 'right', color: 'var(--yellow)' }}>${d.raMs.toFixed(1)}M</td>
+                <td style={{ textAlign: 'right', fontWeight: 600, color: d.netCF >= 0 ? 'var(--green)' : 'var(--red)' }}>${d.netCF.toFixed(1)}M</td>
+                <td style={{ textAlign: 'right', color: d.cumulativeCF >= 0 ? 'var(--green)' : 'var(--red)' }}>${d.cumulativeCF.toFixed(1)}M</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+
+// ============================================================================
+// Project P&L Statement Tab
+// ============================================================================
+
+function ProjectPLTab({ project, discountRate }) {
+  const fin = useMemo(() => computeProjectFinancials(project, discountRate), [project, discountRate])
+
+  if (!fin) return <p style={{ color: 'var(--text-dim)' }}>Insufficient data — set process start date and phases.</p>
+
+  const activeData = fin.data.filter(d => d.raRevenue > 0.1 || d.devCosts > 0.1)
+  if (!activeData.length) return <p style={{ color: 'var(--text-dim)' }}>No P&L data to display.</p>
+
+  // Totals
+  const totals = activeData.reduce((acc, d) => ({
+    raRevenue: acc.raRevenue + d.raRevenue,
+    raCogs: acc.raCogs + d.raCogs,
+    grossProfit: acc.grossProfit + d.grossProfit,
+    raMs: acc.raMs + d.raMs,
+    devCosts: acc.devCosts + d.devCosts,
+    ebit: acc.ebit + d.ebit,
+  }), { raRevenue: 0, raCogs: 0, grossProfit: 0, raMs: 0, devCosts: 0, ebit: 0 })
+
+  const rows = [
+    { label: 'Revenue', key: 'raRevenue', bold: false, color: null, sign: 1 },
+    { label: 'COGS', key: 'raCogs', bold: false, color: null, sign: -1 },
+    { label: 'Gross Profit', key: 'grossProfit', bold: true, color: null, sign: 1 },
+    { label: 'Marketing & Sales', key: 'raMs', bold: false, color: null, sign: -1 },
+    { label: 'Development Costs', key: 'devCosts', bold: false, color: null, sign: -1 },
+    { label: 'EBIT', key: 'ebit', bold: true, color: 'conditional', sign: 1 },
+  ]
+
+  const fmtCell = (val, row) => {
+    const display = row.sign === -1 && val > 0 ? `(${val.toFixed(1)})` : val.toFixed(1)
+    let color = 'var(--text)'
+    if (row.color === 'conditional') color = val >= 0 ? 'var(--green)' : 'var(--red)'
+    else if (row.sign === -1 && val > 0) color = 'var(--red)'
+    return { display, color }
+  }
+
+  return (
+    <div className={styles.section}>
+      <h2 style={{ marginBottom: '1rem' }}>P&L Statement <span style={{ fontSize: '0.7em', color: 'var(--text-muted)', fontWeight: 400 }}>(risk-adjusted, $M)</span></h2>
+      <div style={{ overflowX: 'auto' }}>
+        <table className={styles.table} style={{ fontSize: '0.75rem', minWidth: 600 }}>
+          <thead>
+            <tr>
+              <th style={{ minWidth: 140, position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>$M</th>
+              {activeData.map(d => (
+                <th key={d.year} style={{ textAlign: 'right', minWidth: 60 }}>{d.year}</th>
+              ))}
+              <th style={{ textAlign: 'right', minWidth: 70, borderLeft: '2px solid var(--border)' }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => {
+              const isGrossProfit = row.key === 'grossProfit'
+              const isEbit = row.key === 'ebit'
               return (
-                <div key={phase.id} style={{ display: 'flex', alignItems: 'flex-start', gap: gapX, marginBottom: '0px', position: 'relative' }}>
-                  {/* Success path node */}
-                  <div style={{ position: 'relative', width: nodeWidth, flexShrink: 0 }}>
-                    <div className={styles.treeNode} style={{
-                      borderColor: 'var(--border)',
-                      background: 'var(--surface)'
-                    }}>
-                      <div className={styles.treeNodeLabel}>{PHASE_LABELS[phase.phase] || phase.phase}</div>
-                      <div className={styles.treeNodeDetail}>P(Success): {(phasePos * 100).toFixed(0)}%</div>
-                      <div className={styles.treeNodeDetail}>Duration: {phase.duration_months}mo</div>
-                      <div className={styles.treeNodeDetail}>Cost: ${((phase.internal_cost || 0) + (phase.external_cost || 0)).toFixed(1)}M</div>
-                    </div>
-                  </div>
-
-                  {/* Arrow */}
-                  <div className={styles.treeArrow} style={{ minWidth: gapX }} />
-
-                  {/* Failure branch (below main path) */}
-                  {failurePos > 0 && (
-                    <div style={{
-                      position: 'absolute',
-                      top: nodeHeight + 10,
-                      left: nodeWidth + gapX + 5,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '0.5rem'
-                    }}>
-                      <div style={{
-                        width: 2,
-                        height: 20,
-                        background: 'var(--border)',
-                        borderLeft: '1px dashed var(--red)'
-                      }} />
-                      <div className={styles.treeFail}>
-                        Fail ({(failurePos * 100).toFixed(0)}%)
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <tr key={row.key} style={{
+                  borderTop: (isGrossProfit || isEbit) ? '2px solid var(--border)' : undefined,
+                }}>
+                  <td style={{
+                    fontWeight: row.bold ? 700 : 400,
+                    position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1,
+                    paddingLeft: row.bold ? '0.5rem' : '1.5rem',
+                    color: 'var(--text)'
+                  }}>{row.label}</td>
+                  {activeData.map(d => {
+                    const val = d[row.key]
+                    const { display, color } = fmtCell(val, row)
+                    return (
+                      <td key={d.year} style={{ textAlign: 'right', fontWeight: row.bold ? 700 : 400, color }}>
+                        {display}
+                      </td>
+                    )
+                  })}
+                  <td style={{
+                    textAlign: 'right', fontWeight: row.bold ? 700 : 400,
+                    borderLeft: '2px solid var(--border)',
+                    color: fmtCell(totals[row.key], row).color
+                  }}>
+                    {fmtCell(totals[row.key], row).display}
+                  </td>
+                </tr>
               )
             })}
-          </div>
-
-          {/* Arrow to launch */}
-          <div className={styles.treeArrow} style={{ minWidth: gapX }} />
-
-          {/* LAUNCH node */}
-          <div style={{ position: 'relative', width: nodeWidth + 20, flexShrink: 0 }}>
-            <div className={styles.treeNode} style={{
-              borderColor: 'var(--green)',
-              background: 'rgba(52, 211, 153, 0.1)',
-              padding: '0.75rem'
-            }}>
-              <div className={styles.treeNodeLabel} style={{ color: 'var(--green)' }}>LAUNCH</div>
-              <div className={styles.treeNodeDetail}>P(Launch): {(cumPos * 100).toFixed(0)}%</div>
-              <div className={styles.treeNodeDetail}>Expected: {expectedLaunchDate}</div>
-              <div className={styles.treeNodeDetail}>Peak: ${project.peak_year_sales?.toFixed(0) || 0}M</div>
-            </div>
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
+      <div style={{ marginTop: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+        NPV (@ {(discountRate * 100).toFixed(0)}% discount): <strong style={{ color: fin.npv >= 0 ? 'var(--green)' : 'var(--red)' }}>${fin.npv.toFixed(1)}M</strong>
+        &nbsp;·&nbsp;P(Launch): <strong>{(fin.cumPos * 100).toFixed(0)}%</strong>
+        &nbsp;·&nbsp;Expected launch: <strong>{fin.launch ? decimalYearToDate(fin.launch) : 'N/A'}</strong>
+      </div>
+    </div>
+  )
+}
+
+
+// ============================================================================
+// Decision Tree Tab — backward induction
+// ============================================================================
+
+function DecisionTreeTab({ project, discountRate = 0.1 }) {
+  const fin = useMemo(() => computeProjectFinancials(project, discountRate), [project, discountRate])
+
+  if (!fin || !fin.treeNodes.length) return <p style={{ color: 'var(--text-dim)' }}>No phases available.</p>
+
+  const { treeNodes, cumPos, launch, launchNPV } = fin
+  const expectedLaunchDate = launch ? decimalYearToDate(launch) : 'N/A'
+
+  const nodeW = 150
+  const nodeH = 100
+  const gapX = 30
+  const failH = 60
+  const failGap = 30
+  const rowH = nodeH + failH + failGap + 20
+
+  const totalW = (treeNodes.length + 2) * (nodeW + gapX) + 80
+  const totalH = rowH + 40
+
+  // Colors for phase nodes
+  const phaseNodeColors = {
+    PC: '#60a5fa', PH1: '#6c8cff', PH2: '#a78bfa',
+    PH3: '#f472b6', REG: '#34d399', MARKET: '#fbbf24'
+  }
+
+  return (
+    <div className={styles.section} style={{ overflow: 'auto' }}>
+      <h2 style={{ marginBottom: '1rem' }}>Decision Tree <span style={{ fontSize: '0.7em', color: 'var(--text-muted)', fontWeight: 400 }}>(backward induction)</span></h2>
+      <svg width={totalW} height={totalH} style={{ display: 'block', minWidth: totalW }}>
+        {/* START node */}
+        <g transform={`translate(20, 20)`}>
+          <rect x={0} y={0} width={nodeW} height={nodeH} rx={8}
+            fill="var(--surface2)" stroke="var(--accent)" strokeWidth={2} />
+          <text x={nodeW / 2} y={22} textAnchor="middle" fill="var(--accent)" fontSize={13} fontWeight={700}>START</text>
+          <text x={nodeW / 2} y={42} textAnchor="middle" fill="var(--text-dim)" fontSize={11}>P = 100%</text>
+          <text x={nodeW / 2} y={60} textAnchor="middle" fill="var(--text)" fontSize={12} fontWeight={600}>
+            eNPV: ${treeNodes[0]?.enpv?.toFixed(0) || 0}M
+          </text>
+          <text x={nodeW / 2} y={78} textAnchor="middle" fill="var(--text-muted)" fontSize={10}>
+            Cost: ${treeNodes.reduce((s, n) => s + n.cost, 0).toFixed(0)}M
+          </text>
+        </g>
+
+        {/* Phase nodes */}
+        {treeNodes.map((node, i) => {
+          const x = 20 + (i + 1) * (nodeW + gapX)
+          const y = 20
+          const color = phaseNodeColors[node.phase] || 'var(--accent)'
+          const prevX = 20 + i * (nodeW + gapX) + nodeW
+          const isActual = node.isActual
+
+          return (
+            <g key={i}>
+              {/* Connector line from previous node */}
+              <line x1={prevX} y1={y + nodeH / 2} x2={x} y2={y + nodeH / 2}
+                stroke="var(--border)" strokeWidth={1.5} />
+              {/* Success probability on connector */}
+              <text x={(prevX + x) / 2} y={y + nodeH / 2 - 6}
+                textAnchor="middle" fill="var(--green)" fontSize={10} fontWeight={600}>
+                {(node.pos * 100).toFixed(0)}%
+              </text>
+
+              {/* Phase node box */}
+              <rect x={x} y={y} width={nodeW} height={nodeH} rx={8}
+                fill={isActual ? 'rgba(52,211,153,0.08)' : 'var(--surface)'}
+                stroke={color} strokeWidth={2}
+                strokeDasharray={isActual ? '' : ''}
+              />
+              <text x={x + nodeW / 2} y={y + 20} textAnchor="middle" fill={color} fontSize={12} fontWeight={700}>
+                {PHASE_LABELS[node.phase] || node.phase}
+              </text>
+              {isActual && (
+                <text x={x + nodeW / 2} y={y + 34} textAnchor="middle" fill="var(--green)" fontSize={9} fontWeight={600}>ACTUAL</text>
+              )}
+              <text x={x + nodeW / 2} y={y + (isActual ? 50 : 42)} textAnchor="middle" fill="var(--text-dim)" fontSize={10}>
+                Cost: ${node.cost.toFixed(0)}M · {(node.pos * 100).toFixed(0)}% PoS
+              </text>
+              <text x={x + nodeW / 2} y={y + (isActual ? 66 : 58)} textAnchor="middle" fill="var(--text)" fontSize={11} fontWeight={600}>
+                eNPV: ${node.enpv.toFixed(0)}M
+              </text>
+              <text x={x + nodeW / 2} y={y + (isActual ? 82 : 76)} textAnchor="middle" fill="var(--text-muted)" fontSize={10}>
+                Cum P: {(node.cumProb * 100).toFixed(1)}%
+              </text>
+
+              {/* Failure branch */}
+              <line x1={x + nodeW / 2} y1={y + nodeH} x2={x + nodeW / 2} y2={y + nodeH + failGap}
+                stroke="var(--red)" strokeWidth={1} strokeDasharray="4,3" />
+              <rect x={x + 10} y={y + nodeH + failGap} width={nodeW - 20} height={failH} rx={6}
+                fill="rgba(248,113,113,0.08)" stroke="var(--red)" strokeWidth={1} />
+              <text x={x + nodeW / 2} y={y + nodeH + failGap + 20} textAnchor="middle"
+                fill="var(--red)" fontSize={10} fontWeight={600}>
+                FAIL ({((1 - node.pos) * 100).toFixed(0)}%)
+              </text>
+              <text x={x + nodeW / 2} y={y + nodeH + failGap + 38} textAnchor="middle"
+                fill="var(--text-muted)" fontSize={10}>
+                NPV: ${node.failValue.toFixed(0)}M
+              </text>
+            </g>
+          )
+        })}
+
+        {/* LAUNCH node */}
+        {(() => {
+          const x = 20 + (treeNodes.length + 1) * (nodeW + gapX)
+          const y = 20
+          const prevX = 20 + treeNodes.length * (nodeW + gapX) + nodeW
+          return (
+            <g>
+              <line x1={prevX} y1={y + nodeH / 2} x2={x} y2={y + nodeH / 2}
+                stroke="var(--green)" strokeWidth={2} />
+              <rect x={x} y={y} width={nodeW} height={nodeH} rx={8}
+                fill="rgba(52,211,153,0.1)" stroke="var(--green)" strokeWidth={2} />
+              <text x={x + nodeW / 2} y={y + 22} textAnchor="middle" fill="var(--green)" fontSize={13} fontWeight={700}>
+                LAUNCH
+              </text>
+              <text x={x + nodeW / 2} y={y + 42} textAnchor="middle" fill="var(--text-dim)" fontSize={11}>
+                P(Launch): {(cumPos * 100).toFixed(1)}%
+              </text>
+              <text x={x + nodeW / 2} y={y + 60} textAnchor="middle" fill="var(--text)" fontSize={11}>
+                {expectedLaunchDate}
+              </text>
+              <text x={x + nodeW / 2} y={y + 78} textAnchor="middle" fill="var(--green)" fontSize={12} fontWeight={600}>
+                NPV: ${launchNPV.toFixed(0)}M
+              </text>
+            </g>
+          )
+        })()}
+      </svg>
     </div>
   )
 }
@@ -1686,7 +2033,9 @@ function AuditTrailTab({ entityType, entityId }) {
 
 function ProjectDetailTabs({ project, onTabChange, currentTab }) {
   const tabs = [
-    { id: 'detail', label: 'Detail' },
+    { id: 'detail', label: 'Input Form' },
+    { id: 'cashflow', label: 'Expected Cash Flow' },
+    { id: 'pnl', label: 'P&L Statement' },
     { id: 'tree', label: 'Decision Tree' },
     { id: 'snapshots', label: 'Snapshots' },
     { id: 'history', label: 'History' },
@@ -2590,7 +2939,7 @@ export default function PpmApp() {
         {/* Header */}
         <div className={styles.header}>
           <div className={styles.headerInfo}>
-            <h1>Portfolio Manager</h1>
+            <h1>Portfolio Manager <span style={{ fontSize: '0.6em', fontWeight: 400, color: 'var(--text-muted)' }}>v{APP_VERSION}</span></h1>
             <p>{allProjects.length} projects · {portfolios.length} portfolios</p>
           </div>
           <div className={styles.headerActions}>
@@ -2599,6 +2948,11 @@ export default function PpmApp() {
               {theme === 'dark' ? '☀️' : '🌙'} {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
             <button className={styles.btn} onClick={() => setView('settings')}>⚙ Settings</button>
+            <button className={styles.btn} onClick={() => {
+              const el = document.documentElement
+              if (document.fullscreenElement) document.exitFullscreen?.()
+              else el.requestFullscreen?.()
+            }} title="Toggle fullscreen" style={{ fontSize: '1.1rem', padding: '0.4rem 0.6rem' }}>⛶</button>
           </div>
         </div>
 

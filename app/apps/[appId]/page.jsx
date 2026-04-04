@@ -405,73 +405,71 @@ export default function AppPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
-      {/* Header bar */}
-      <div style={{
-        display: isFullscreen ? 'none' : 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '16px 24px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--bg-secondary)',
-        flexWrap: 'wrap',
-        gap: 12,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link
-            href="/"
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: 'var(--accent-purple)',
-              textDecoration: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            {'\u2190'} Claudeworks!
-          </Link>
-          <span style={{ color: 'var(--border-hover)' }}>|</span>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#ffffff', margin: 0 }}>
-            {app.title}
-            <span style={{
-              fontSize: 11,
-              fontWeight: 400,
-              color: 'var(--text-muted)',
-              marginLeft: 8,
-              fontFamily: "'JetBrains Mono', monospace",
-            }}>
-              v{app.version}
-            </span>
-          </h1>
-        </div>
+      {/* Header bar — hidden for commercial apps (they manage their own header) */}
+      {app.categoryType !== 'commercial' && (
+        <div style={{
+          display: isFullscreen ? 'none' : 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 24px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--bg-secondary)',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <Link
+              href="/"
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--accent-purple)',
+                textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              {'\u2190'} Claudeworks!
+            </Link>
+            <span style={{ color: 'var(--border-hover)' }}>|</span>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: '#ffffff', margin: 0 }}>
+              {app.title}
+              <span style={{
+                fontSize: 11,
+                fontWeight: 400,
+                color: 'var(--text-muted)',
+                marginLeft: 8,
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                v{app.version}
+              </span>
+            </h1>
+          </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {app.categoryType !== 'commercial' && (
-            <>
-              <button style={buttonStyle} onClick={() => setShowDescription(true)}>
-                About
-              </button>
-              <button style={buttonStyle} onClick={handleShowPrompts}>
-                Prompts
-              </button>
-              <button
-                style={{ ...buttonStyle, borderColor: 'var(--accent-green)', color: 'var(--accent-green)' }}
-                onClick={handleShowCode}
-              >
-                View Code
-              </button>
-            </>
-          )}
-          <button
-            style={{ ...buttonStyle, borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', fontSize: 15, padding: '8px 12px' }}
-            onClick={toggleFullscreen}
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? '\u2297' : '\u26F6'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button style={buttonStyle} onClick={() => setShowDescription(true)}>
+              About
+            </button>
+            <button style={buttonStyle} onClick={handleShowPrompts}>
+              Prompts
+            </button>
+            <button
+              style={{ ...buttonStyle, borderColor: 'var(--accent-green)', color: 'var(--accent-green)' }}
+              onClick={handleShowCode}
+            >
+              View Code
+            </button>
+            <button
+              style={{ ...buttonStyle, borderColor: 'var(--accent-amber)', color: 'var(--accent-amber)', fontSize: 15, padding: '8px 12px' }}
+              onClick={toggleFullscreen}
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? '\u2297' : '\u26F6'}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* App area */}
       <div

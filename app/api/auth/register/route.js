@@ -1,7 +1,8 @@
-import { createUser, getUserByEmail } from '@/lib/db'
+// Dynamic import for @/lib/db to avoid pulling better-sqlite3 into the build
 
 export async function POST(request) {
   try {
+    const { createUser, getUserByEmail } = await import('@/lib/db')
     const body = await request.json()
     const { email, password, name } = body
 

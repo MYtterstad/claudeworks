@@ -1,6 +1,9 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { getUserByEmail, verifyPassword } from '@/lib/db'
+
+// NOTE: We use dynamic import() for @/lib/db inside authorize() to avoid
+// pulling better-sqlite3 into the webpack bundle at build time.
+// The static import was causing Vercel builds to fail during "Collecting page data".
 
 const handler = NextAuth({
   providers: [
@@ -14,6 +17,9 @@ const handler = NextAuth({
         if (!credentials?.email || !credentials?.password) {
           throw new Error('Invalid credentials')
         }
+
+        // Dynamic import — only loads lib/db (and better-sqlite3) at request time
+        const { getUserByEmail, verifyPassword } = await import('@/lib/db')
 
         const user = getUserByEmail(credentials.email)
 
