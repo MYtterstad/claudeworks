@@ -417,94 +417,91 @@ function BricksTab({ projects, onSelectProject }) {
 
 function TimelineTab({ projects, theme }) {
   const canvasRef = useRef(null)
-  const containerRef = useRef(null)
+  const scrollRef = useRef(null)
   const colors = getColors(theme)
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const container = containerRef.current
-    if (!canvas || !container || !projects.length) return
+  const ROW_H = 36
+  const HEADER_H = 32
+  const LABEL_W = 140
+  const PAD_R = 40
 
-    const dpr = window.devicePixelRatio || 1
-    const W = container.clientWidth
-    const rowH = 36
-    const headerH = 40
-    const labelW = 120
-    const padR = 40
-    const H = headerH + projects.length * rowH + 20
-
-    canvas.width = W * dpr
-    canvas.height = H * dpr
-    canvas.style.width = W + 'px'
-    canvas.style.height = H + 'px'
-    const ctx = canvas.getContext('2d')
-    ctx.scale(dpr, dpr)
-
-    let minYear = 9999, maxYear = 0
+  // Compute year range
+  const { minYear, maxYear } = useMemo(() => {
+    let mn = 9999, mx = 0
     for (const p of projects) {
       if (!p.process_start_date) continue
       const start = p.process_start_date
       const end = getLaunchDate(p) || start + 5
-      if (start < minYear) minYear = start
-      if (end > maxYear) maxYear = end
+      if (start < mn) mn = start
+      if (end > mx) mx = end
     }
-    minYear = Math.floor(minYear) - 1
-    maxYear = Math.ceil(maxYear) + 1
-    const yearRange = maxYear - minYear
-    const chartW = W - labelW - padR
-    const yearToX = (y) => labelW + ((y - minYear) / yearRange) * chartW
+    return { minYear: Math.floor(mn) - 1, maxYear: Math.ceil(mx) + 1 }
+  }, [projects])
+
+  const yearRange = maxYear - minYear
+  const years = useMemo(() => {
+    const arr = []
+    for (let y = minYear; y <= maxYear; y++) arr.push(y)
+    return arr
+  }, [minYear, maxYear])
+
+  // Draw the canvas bars (no header, no labels — those are DOM)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const scrollEl = scrollRef.current
+    if (!canvas || !scrollEl || !projects.length) return
+
+    const dpr = window.devicePixelRatio || 1
+    // Chart area is wide enough for years, min 800px
+    const chartW = Math.max(yearRange * 80, 800)
+    const totalW = chartW
+    const H = projects.length * ROW_H
+
+    canvas.width = totalW * dpr
+    canvas.height = H * dpr
+    canvas.style.width = totalW + 'px'
+    canvas.style.height = H + 'px'
+    const ctx = canvas.getContext('2d')
+    ctx.scale(dpr, dpr)
+
+    const yearToX = (y) => ((y - minYear) / yearRange) * chartW
 
     // Background
     ctx.fillStyle = colors.bg
-    ctx.fillRect(0, 0, W, H)
+    ctx.fillRect(0, 0, totalW, H)
 
-    // Year grid lines and labels
+    // Year grid lines
     ctx.strokeStyle = colors.gridLine
     ctx.lineWidth = 1
-    ctx.fillStyle = colors.textDim
-    ctx.font = '11px -apple-system, sans-serif'
-    ctx.textAlign = 'center'
     for (let yr = minYear; yr <= maxYear; yr++) {
       const x = yearToX(yr)
       ctx.beginPath()
-      ctx.moveTo(x, headerH)
+      ctx.moveTo(x, 0)
       ctx.lineTo(x, H)
       ctx.stroke()
-      ctx.fillText(yr.toString(), x, headerH - 8)
     }
 
-    // TODAY vertical line — thin, behind everything
+    // TODAY vertical line
     const nowX = yearToX(TODAY_DECIMAL)
     ctx.strokeStyle = colors.red
     ctx.lineWidth = 1.5
     ctx.setLineDash([4, 4])
     ctx.beginPath()
-    ctx.moveTo(nowX, headerH)
+    ctx.moveTo(nowX, 0)
     ctx.lineTo(nowX, H)
     ctx.stroke()
     ctx.setLineDash([])
-    // "TODAY" label
-    ctx.fillStyle = colors.red
-    ctx.font = 'bold 9px -apple-system, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('TODAY', nowX, headerH - 2)
 
     // Draw project bars
     projects.forEach((p, idx) => {
-      const y = headerH + idx * rowH
-      const midY = y + rowH / 2
+      const y = idx * ROW_H
+      const midY = y + ROW_H / 2
 
       // Alternating row bg
       if (idx % 2 === 0) {
         ctx.fillStyle = colors.surface2
-        ctx.fillRect(0, y, W, rowH)
+        ctx.fillRect(0, y, totalW, ROW_H)
       }
-
-      // Label
-      ctx.fillStyle = colors.text
-      ctx.textAlign = 'right'
-      ctx.font = '12px -apple-system, sans-serif'
-      ctx.fillText(p.name, labelW - 12, midY + 4)
 
       if (!p.process_start_date || !p.phases) return
 
@@ -547,11 +544,61 @@ function TimelineTab({ projects, theme }) {
         ctx.fill()
       }
     })
-  }, [projects, theme, colors])
+  }, [projects, theme, colors, minYear, maxYear, yearRange])
+
+  const chartW = Math.max(yearRange * 80, 800)
+  const yearToPercent = (y) => ((y - minYear) / yearRange) * 100
 
   return (
-    <div ref={containerRef} style={{ width: '100%', overflowX: 'auto' }}>
-      <canvas ref={canvasRef} style={{ display: 'block' }} />
+    <div style={{ position: 'relative', width: '100%' }}>
+      {/* Container with frozen left column and scrollable chart */}
+      <div style={{ display: 'flex', overflow: 'hidden', border: `1px solid var(--border)`, borderRadius: '0.5rem', background: 'var(--bg)' }}>
+        {/* Frozen left column: header corner + project names */}
+        <div style={{ flex: '0 0 auto', width: LABEL_W, zIndex: 2, background: 'var(--bg)', borderRight: `1px solid var(--border)` }}>
+          {/* Corner cell */}
+          <div style={{ height: HEADER_H, borderBottom: `1px solid var(--border)`, display: 'flex', alignItems: 'center', padding: '0 0.75rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Project
+          </div>
+          {/* Project names */}
+          {projects.map((p, idx) => (
+            <div key={p.id} style={{
+              height: ROW_H, display: 'flex', alignItems: 'center', padding: '0 0.75rem',
+              fontSize: '0.8rem', fontWeight: 500, color: 'var(--text)',
+              background: idx % 2 === 0 ? 'var(--surface2)' : 'transparent',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              borderBottom: idx < projects.length - 1 ? '1px solid transparent' : 'none'
+            }}>
+              {p.name}
+            </div>
+          ))}
+        </div>
+
+        {/* Scrollable chart area */}
+        <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden' }}>
+          {/* Frozen year header */}
+          <div style={{ position: 'sticky', top: 0, zIndex: 1, height: HEADER_H, display: 'flex', borderBottom: `1px solid var(--border)`, background: 'var(--bg)', minWidth: chartW }}>
+            {years.map(yr => (
+              <div key={yr} style={{
+                position: 'absolute', left: `${yearToPercent(yr)}%`,
+                transform: 'translateX(-50%)', fontSize: '0.7rem', fontWeight: 600,
+                color: yr === Math.floor(TODAY_DECIMAL) ? colors.red : 'var(--text-dim)',
+                lineHeight: `${HEADER_H}px`, whiteSpace: 'nowrap'
+              }}>
+                {yr}
+              </div>
+            ))}
+            {/* TODAY marker in header */}
+            <div style={{ position: 'absolute', left: `${yearToPercent(TODAY_DECIMAL)}%`, bottom: 0, transform: 'translateX(-50%)', fontSize: '0.6rem', fontWeight: 700, color: colors.red }}>
+              ▼
+            </div>
+          </div>
+
+          {/* Canvas for bars */}
+          <canvas ref={canvasRef} style={{ display: 'block' }} />
+        </div>
+      </div>
+
+      {/* Legend */}
       <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
         {Object.entries(PHASE_COLORS).filter(([k]) => k !== 'MARKET').map(([phase, color]) => (
           <div key={phase} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem' }}>
