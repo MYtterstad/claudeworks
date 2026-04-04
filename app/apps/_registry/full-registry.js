@@ -301,6 +301,7 @@ Henri Poincaré proved in 1890 that the general three-body problem has no closed
     icon: '🏃',
     category: 'Navigation',
     categoryType: 'commercial',
+    listed: false,
     summary: 'Plan runs, walks & sightseeing routes with AI-powered route generation.',
     description: `City Explorer is a modern route planner for active travelers. Enter your desired distance and activity type, and get intelligent loop routes that start and end at your location. Discover nearby points of interest — museums, cafes, landmarks, and historic sites — along your route.
 
@@ -320,6 +321,7 @@ The app uses real-time map visualization with Leaflet and OpenStreetMap, distanc
     icon: '💊',
     category: 'Pharma',
     categoryType: 'commercial',
+    listed: false,
     summary: 'Pharma Pipeline Analytics',
     description: `Portfolio Manager is a proprietary pharma portfolio management tool for analyzing drug development pipelines and generating Captario financial models. Manage projects across preclinical through regulatory phases, track development costs, and generate stochastic financial projections.
 
