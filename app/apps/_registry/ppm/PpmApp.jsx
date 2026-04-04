@@ -1782,10 +1782,11 @@ function AdvancePhaseModal({ project, onClose, onAdvanced }) {
 // Create Project Modal
 // ============================================================================
 
-function CreateProjectModal({ onClose, onCreated }) {
+function CreateProjectModal({ onClose, onCreated, hasPortfolio = false, portfolioName = '' }) {
   const [mode, setMode] = useState('random') // 'empty' or 'random'
   const [name, setName] = useState('')
   const [startPhase, setStartPhase] = useState('PC')
+  const [addToPortfolio, setAddToPortfolio] = useState(hasPortfolio)
   const [loading, setLoading] = useState(false)
 
   const handleCreate = async () => {
@@ -1824,7 +1825,7 @@ function CreateProjectModal({ onClose, onCreated }) {
       }
       const created = await res.json()
 
-      onCreated(created)
+      onCreated(created, addToPortfolio)
     } catch (err) {
       alert(err.message)
     } finally {
@@ -1859,6 +1860,14 @@ function CreateProjectModal({ onClose, onCreated }) {
             </select>
           </div>
         </div>
+
+        {hasPortfolio && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={addToPortfolio} onChange={e => setAddToPortfolio(e.target.checked)}
+              style={{ accentColor: 'var(--accent)', width: 16, height: 16 }} />
+            Add to current portfolio{portfolioName ? ` (${portfolioName})` : ''}
+          </label>
+        )}
 
         <div className={styles.modalActions}>
           <button className={styles.btn} onClick={onClose}>Cancel</button>
@@ -2030,7 +2039,7 @@ function ManageProjectsModal({ portfolio, allProjects, onClose, onChanged }) {
 // Snapshot Modal
 // ============================================================================
 
-function SnapshotModal({ entityType, entityId, entityName, onClose }) {
+function SnapshotPanel({ entityType, entityId, entityName, inline = false, onClose }) {
   const [snapshots, setSnapshots] = useState([])
   const [newName, setNewName] = useState('')
   const [loading, setLoading] = useState(true)
@@ -2066,36 +2075,48 @@ function SnapshotModal({ entityType, entityId, entityName, onClose }) {
     }
   }
 
-  return (
-    <div className={styles.modalOverlay} onClick={onClose}>
-      <div className={styles.modal} onClick={e => e.stopPropagation()}>
-        <h2>Snapshots — {entityName}</h2>
+  const content = (
+    <>
+      {!inline && <h2>Snapshots — {entityName}</h2>}
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
-          <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
-            placeholder="Snapshot name (e.g. Q1 2026 baseline)"
-            onKeyDown={e => { if (e.key === 'Enter') createSnapshot() }}
-            style={{ flex: 1, padding: '0.5rem 0.75rem', border: '1px solid var(--border)', borderRadius: '0.375rem', background: 'var(--bg)', color: 'var(--text)', fontSize: '0.85rem' }} />
-          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={createSnapshot} disabled={creating || !newName.trim()}>
-            {creating ? '...' : 'Create'}
-          </button>
-        </div>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+          placeholder="Snapshot name (e.g. Q1 2026 baseline)"
+          onKeyDown={e => { if (e.key === 'Enter') createSnapshot() }}
+          style={{ flex: 1, padding: '0.5rem 0.75rem', border: '1px solid var(--border)', borderRadius: '0.375rem', background: 'var(--bg)', color: 'var(--text)', fontSize: '0.85rem' }} />
+        <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={createSnapshot} disabled={creating || !newName.trim()}>
+          {creating ? '...' : 'Create'}
+        </button>
+      </div>
 
-        {loading ? <p style={{ color: 'var(--text-dim)' }}>Loading...</p> :
-          snapshots.length === 0 ? <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No snapshots yet.</p> :
-            <div className={styles.snapshotList}>
-              {snapshots.map(s => (
-                <div key={s.id} className={styles.snapshotEntry}>
-                  <span className={styles.snapshotName}>{s.snapshot_name}</span>
-                  <span className={styles.snapshotDate}>{new Date(s.created_at).toLocaleDateString()}</span>
-                </div>
-              ))}
-            </div>
-        }
+      {loading ? <p style={{ color: 'var(--text-dim)' }}>Loading...</p> :
+        snapshots.length === 0 ? <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No snapshots yet.</p> :
+          <div className={styles.snapshotList}>
+            {snapshots.map(s => (
+              <div key={s.id} className={styles.snapshotEntry}>
+                <span className={styles.snapshotName}>{s.snapshot_name}</span>
+                <span className={styles.snapshotDate}>{new Date(s.created_at).toLocaleDateString()}</span>
+              </div>
+            ))}
+          </div>
+      }
 
+      {!inline && (
         <div className={styles.modalActions}>
           <button className={styles.btn} onClick={onClose}>Close</button>
         </div>
+      )}
+    </>
+  )
+
+  // Inline mode: render directly without modal overlay
+  if (inline) return <div>{content}</div>
+
+  // Modal mode: render with overlay
+  return (
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div className={styles.modal} onClick={e => e.stopPropagation()}>
+        {content}
       </div>
     </div>
   )
@@ -2519,19 +2540,14 @@ export default function PpmApp() {
 
         {projectTab === 'snapshots' && (
           <div>
-            <div style={{ marginBottom: '1.25rem', display: 'flex', gap: '0.75rem' }}>
-              <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setShowSnapshot({ type: 'project', id: selectedProject.id, name: selectedProject.name })}>
-                📸 Create Snapshot
-              </button>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text)' }}>Create & Manage Snapshots</h3>
+              <SnapshotPanel entityType="project" entityId={selectedProject.id} entityName={selectedProject.name}
+                inline />
             </div>
             <div style={{ marginBottom: '1.5rem' }}>
               <h3 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text)' }}>Compare Snapshots</h3>
               <SnapshotDiffTab project={selectedProject} />
-            </div>
-            <div>
-              <h3 style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--text)' }}>All Snapshots</h3>
-              <SnapshotModal entityType="project" entityId={selectedProject.id} entityName={selectedProject.name}
-                onClose={() => {}} />
             </div>
           </div>
         )}
@@ -2557,7 +2573,7 @@ export default function PpmApp() {
         )}
 
         {showSnapshot && (
-          <SnapshotModal entityType={showSnapshot.type} entityId={showSnapshot.id} entityName={showSnapshot.name}
+          <SnapshotPanel entityType={showSnapshot.type} entityId={showSnapshot.id} entityName={showSnapshot.name}
             onClose={() => setShowSnapshot(null)} />
         )}
 
@@ -2569,7 +2585,7 @@ export default function PpmApp() {
   // ── Portfolio View ──
   return (
     <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
-      {/* Sticky top section: header + selector + KPIs + tabs */}
+      {/* Single sticky section: header + selector + (when portfolio: KPIs + tabs) */}
       <div className={styles.stickyTop}>
         {/* Header */}
         <div className={styles.header}>
@@ -2609,24 +2625,9 @@ export default function PpmApp() {
           )}
         </div>
 
-      </div>{/* end stickyTop (header + selector) */}
-
-      {/* No portfolio yet */}
-      {!portfolio && portfolios.length === 0 && (
-        <div className={styles.emptyState}>
-          <h3>No portfolios yet</h3>
-          <p>Create your first portfolio to get started.</p>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setShowCreatePortfolio(true)} style={{ marginTop: '1rem' }}>
-            + New Portfolio
-          </button>
-        </div>
-      )}
-
-      {/* Portfolio content */}
-      {portfolio && (
-        <>
-          {/* Sticky KPI + Tab Bar section */}
-          <div className={styles.stickyControls}>
+        {/* KPI + Tab Bar (only when portfolio is loaded) */}
+        {portfolio && (
+          <>
             {/* Collapsible Summary Cards */}
             <div className={styles.kpiSection}>
               <button className={styles.kpiToggle} onClick={() => setKpiCollapsed(!kpiCollapsed)}
@@ -2691,7 +2692,24 @@ export default function PpmApp() {
                   onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
               ))}
             </div>
-          </div>{/* end stickyControls */}
+          </>
+        )}
+      </div>{/* end stickyTop */}
+
+      {/* No portfolio yet */}
+      {!portfolio && portfolios.length === 0 && (
+        <div className={styles.emptyState}>
+          <h3>No portfolios yet</h3>
+          <p>Create your first portfolio to get started.</p>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setShowCreatePortfolio(true)} style={{ marginTop: '1rem' }}>
+            + New Portfolio
+          </button>
+        </div>
+      )}
+
+      {/* Portfolio content */}
+      {portfolio && (
+        <>
 
           {/* Tab Content */}
           {activeTab === 'table' && (
@@ -2795,11 +2813,12 @@ export default function PpmApp() {
       {/* Modals */}
       {showCreateProject && (
         <CreateProjectModal onClose={() => setShowCreateProject(false)}
-          onCreated={async (created) => {
+          hasPortfolio={!!portfolio}
+          portfolioName={portfolio?.name || ''}
+          onCreated={async (created, shouldAddToPortfolio) => {
             setShowCreateProject(false)
             await loadAllProjects()
-            if (portfolio) {
-              // Ask to add to current portfolio
+            if (shouldAddToPortfolio && portfolio) {
               await fetch(`/api/ppm/portfolio/${portfolio.id}/projects`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2828,7 +2847,7 @@ export default function PpmApp() {
       )}
 
       {showSnapshot && (
-        <SnapshotModal entityType={showSnapshot.type} entityId={showSnapshot.id} entityName={showSnapshot.name}
+        <SnapshotPanel entityType={showSnapshot.type} entityId={showSnapshot.id} entityName={showSnapshot.name}
           onClose={() => setShowSnapshot(null)} />
       )}
 
