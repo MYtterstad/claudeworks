@@ -6,7 +6,7 @@ import styles from './PpmApp.module.css'
 // Constants & Utility Functions
 // ============================================================================
 
-const APP_VERSION = '0.3.0'
+const APP_VERSION = '0.4.0'
 
 function getTodayDecimal() {
   const now = new Date()
@@ -356,52 +356,56 @@ function BricksTab({ projects, onSelectProject }) {
         ))}
       </div>
 
-      {/* Phase Columns */}
+      {/* Phase Columns — each column scrolls independently */}
       <div className={styles.bricksColumns}>
         {PHASE_ORDER.map(phase => {
           const badge = PHASE_BADGE_STYLES[phase] || { bg: '#2e3345', color: '#8b92a8' }
           return (
             <div key={phase} className={styles.phaseColumn}>
+              {/* Fixed header — never scrolls */}
               <div className={styles.phaseColumnHeader}
-                style={{ background: badge.bg, color: badge.color }}>
+                style={{ background: badge.bg, color: badge.color, flexShrink: 0 }}>
                 {PHASE_LABELS[phase]} ({columns[phase]?.length || 0})
               </div>
-              {columns[phase]?.map(p => {
-                const color = getColorForAttribute(p, colorBy)
-                return (
-                  <div key={p.id} className={styles.brick} onClick={() => onSelectProject(p)}>
-                    <div className={styles.brickColorBar} style={{ background: color }} />
-                    <div className={styles.brickName}>{p.name}</div>
-                    <div className={styles.brickDetail}>{p.ta} · {p.modality}</div>
-                    <div className={styles.brickStat}>
-                      <span>
-                        <span className={styles.brickStatLabel}>Peak </span>
-                        <span className={styles.brickStatValue}>${(p.peak_year_sales || 0).toFixed(0)}M</span>
-                      </span>
-                      <span>
-                        <span className={styles.brickStatLabel}>eNPV </span>
-                        <span className={styles.brickStatValue} style={{ color: p.enpvData.enpv >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                          ${p.enpvData.enpv.toFixed(0)}M
+              {/* Scrollable brick list */}
+              <div className={styles.phaseColumnScroll}>
+                {columns[phase]?.map(p => {
+                  const color = getColorForAttribute(p, colorBy)
+                  return (
+                    <div key={p.id} className={styles.brick} onClick={() => onSelectProject(p)}>
+                      <div className={styles.brickColorBar} style={{ background: color }} />
+                      <div className={styles.brickName}>{p.name}</div>
+                      <div className={styles.brickDetail}>{p.ta} · {p.modality}</div>
+                      <div className={styles.brickStat}>
+                        <span>
+                          <span className={styles.brickStatLabel}>Peak </span>
+                          <span className={styles.brickStatValue}>${(p.peak_year_sales || 0).toFixed(0)}M</span>
                         </span>
-                      </span>
+                        <span>
+                          <span className={styles.brickStatLabel}>eNPV </span>
+                          <span className={styles.brickStatValue} style={{ color: p.enpvData.enpv >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            ${p.enpvData.enpv.toFixed(0)}M
+                          </span>
+                        </span>
+                      </div>
+                      <div className={styles.brickStat}>
+                        <span>
+                          <span className={styles.brickStatLabel}>PoS </span>
+                          <span className={styles.brickStatValue}>{(p.cumPos * 100).toFixed(0)}%</span>
+                        </span>
+                        <span>
+                          <span className={styles.brickStatLabel}>{p.source}</span>
+                        </span>
+                      </div>
                     </div>
-                    <div className={styles.brickStat}>
-                      <span>
-                        <span className={styles.brickStatLabel}>PoS </span>
-                        <span className={styles.brickStatValue}>{(p.cumPos * 100).toFixed(0)}%</span>
-                      </span>
-                      <span>
-                        <span className={styles.brickStatLabel}>{p.source}</span>
-                      </span>
-                    </div>
+                  )
+                })}
+                {(!columns[phase] || columns[phase].length === 0) && (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic' }}>
+                    No projects
                   </div>
-                )
-              })}
-              {(!columns[phase] || columns[phase].length === 0) && (
-                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic' }}>
-                  No projects
-                </div>
-              )}
+                )}
+              </div>
             </div>
           )
         })}
@@ -552,9 +556,9 @@ function TimelineTab({ projects, theme }) {
   return (
     <div style={{ position: 'relative', width: '100%' }}>
       {/* Container with frozen left column and scrollable chart */}
-      <div style={{ display: 'flex', overflow: 'hidden', border: `1px solid var(--border)`, borderRadius: '0.5rem', background: 'var(--bg)' }}>
+      <div style={{ display: 'flex', overflow: 'hidden', border: `1px solid var(--border)`, borderRadius: '0.5rem', background: 'var(--bg)', maxHeight: 'calc(100vh - 20rem)' }}>
         {/* Frozen left column: header corner + project names */}
-        <div style={{ flex: '0 0 auto', width: LABEL_W, zIndex: 2, background: 'var(--bg)', borderRight: `1px solid var(--border)` }}>
+        <div style={{ flex: '0 0 auto', width: LABEL_W, zIndex: 2, background: 'var(--bg)', borderRight: `1px solid var(--border)`, overflowY: 'auto' }}>
           {/* Corner cell */}
           <div style={{ height: HEADER_H, borderBottom: `1px solid var(--border)`, display: 'flex', alignItems: 'center', padding: '0 0.75rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Project
@@ -574,7 +578,7 @@ function TimelineTab({ projects, theme }) {
         </div>
 
         {/* Scrollable chart area */}
-        <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'hidden' }}>
+        <div ref={scrollRef} style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
           {/* Frozen year header */}
           <div style={{ position: 'sticky', top: 0, zIndex: 1, height: HEADER_H, display: 'flex', borderBottom: `1px solid var(--border)`, background: 'var(--bg)', minWidth: chartW }}>
             {years.map(yr => (
@@ -1257,6 +1261,385 @@ function HistoryTab({ entityType, entityId }) {
 // ============================================================================
 // Decision Tree Tab
 // ============================================================================
+
+// ============================================================================
+// Spreadsheet View — All projects × all fields with sub-tabs
+// ============================================================================
+
+const SPREADSHEET_TABS = [
+  { id: 'attributes', label: 'Attributes' },
+  { id: 'dates', label: 'Phase Start Dates' },
+  { id: 'durations', label: 'Phase Durations' },
+  { id: 'probabilities', label: 'Phase Probabilities' },
+  { id: 'costs', label: 'Phase Costs' },
+  { id: 'commercial', label: 'Commercial' },
+]
+
+function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseField, onSelectProject }) {
+  const [subTab, setSubTab] = useState('attributes')
+
+  const PHASES = ['PC', 'PH1', 'PH2', 'PH3', 'REG']
+
+  const getPhase = (project, phaseName) => (project.phases || []).find(p => p.phase === phaseName)
+  const isPhaseActual = (project, phaseName) => getPhase(project, phaseName)?.is_actual || false
+
+  // Determine if a field is in the "future" (editable) — actual phases are locked
+  const isEditable = (project, phaseName) => !isPhaseActual(project, phaseName)
+
+  const cellStyle = (editable) => ({
+    textAlign: 'right',
+    fontSize: '0.8rem',
+    color: editable ? 'var(--text)' : 'var(--text-dim)',
+    padding: '0.5rem 0.75rem',
+    borderBottom: '1px solid var(--border)',
+    whiteSpace: 'nowrap',
+    minWidth: 90,
+  })
+
+  const headerCellStyle = {
+    padding: '0.75rem 0.75rem',
+    textAlign: 'right',
+    background: 'var(--surface2)',
+    color: 'var(--text-dim)',
+    fontWeight: 600,
+    fontSize: '0.7rem',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    borderBottom: '1px solid var(--border)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 3,
+    whiteSpace: 'nowrap',
+    minWidth: 90,
+  }
+
+  const frozenNameStyle = {
+    position: 'sticky',
+    left: 0,
+    zIndex: 4,
+    background: 'var(--surface)',
+    padding: '0.5rem 0.75rem',
+    fontWeight: 600,
+    fontSize: '0.8rem',
+    color: 'var(--accent)',
+    cursor: 'pointer',
+    borderBottom: '1px solid var(--border)',
+    borderRight: '1px solid var(--border)',
+    whiteSpace: 'nowrap',
+    minWidth: 120,
+  }
+
+  const frozenNameHeader = {
+    ...headerCellStyle,
+    position: 'sticky',
+    left: 0,
+    zIndex: 5,
+    textAlign: 'left',
+    minWidth: 120,
+    borderRight: '1px solid var(--border)',
+  }
+
+  const renderEditableCell = (value, onCommit, type = 'number', step = '1', editable = true) => {
+    if (!editable) {
+      return <span style={{ color: 'var(--text-dim)' }}>{type === 'number' ? (typeof value === 'number' ? value : '—') : (value || '—')}</span>
+    }
+    return (
+      <EditableInput
+        type={type}
+        step={step}
+        value={value ?? ''}
+        style={{ width: '100%', maxWidth: 90, textAlign: 'right', background: 'transparent', border: '1px solid transparent', borderRadius: 4, padding: '0.2rem 0.4rem', color: 'var(--text)', fontSize: '0.8rem' }}
+        onCommit={onCommit}
+      />
+    )
+  }
+
+  return (
+    <div>
+      {/* Sub-tab bar */}
+      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+        {SPREADSHEET_TABS.map(tab => (
+          <button key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            style={{
+              padding: '0.4rem 0.85rem',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              border: subTab === tab.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+              borderRadius: '0.375rem',
+              cursor: 'pointer',
+              background: subTab === tab.id ? 'rgba(108,140,255,0.12)' : 'var(--surface)',
+              color: subTab === tab.id ? 'var(--accent)' : 'var(--text-dim)',
+              transition: 'all 0.15s',
+            }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Scrollable table */}
+      <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 22rem)', border: '1px solid var(--border)', borderRadius: '0.5rem', background: 'var(--surface)' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+
+          {/* ── Attributes sub-tab ── */}
+          {subTab === 'attributes' && (
+            <>
+              <thead>
+                <tr>
+                  <th style={frozenNameHeader}>Project</th>
+                  <th style={headerCellStyle}>Phase</th>
+                  <th style={{ ...headerCellStyle, textAlign: 'left' }}>TA</th>
+                  <th style={{ ...headerCellStyle, textAlign: 'left' }}>Modality</th>
+                  <th style={{ ...headerCellStyle, textAlign: 'left' }}>Source</th>
+                  <th style={{ ...headerCellStyle, textAlign: 'left', minWidth: 200 }}>Indication</th>
+                  <th style={{ ...headerCellStyle, textAlign: 'left', minWidth: 200 }}>MoA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, idx) => (
+                  <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                    <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
+                    <td style={{ ...cellStyle(false), textAlign: 'center' }}>
+                      <span style={{
+                        fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.5rem', borderRadius: '0.25rem',
+                        background: (PHASE_BADGE_STYLES[p.current_phase] || {}).bg,
+                        color: (PHASE_BADGE_STYLES[p.current_phase] || {}).color
+                      }}>{p.current_phase}</span>
+                    </td>
+                    <td style={{ ...cellStyle(true), textAlign: 'left' }}>
+                      {renderEditableCell(p.ta || '', v => onUpdateProjectField(p.id, 'ta', v), 'text', undefined, true)}
+                    </td>
+                    <td style={{ ...cellStyle(true), textAlign: 'left' }}>
+                      {renderEditableCell(p.modality || '', v => onUpdateProjectField(p.id, 'modality', v), 'text', undefined, true)}
+                    </td>
+                    <td style={{ ...cellStyle(true), textAlign: 'left' }}>
+                      {renderEditableCell(p.source || '', v => onUpdateProjectField(p.id, 'source', v), 'text', undefined, true)}
+                    </td>
+                    <td style={{ ...cellStyle(true), textAlign: 'left', minWidth: 200 }}>
+                      {renderEditableCell(p.indication || '', v => onUpdateProjectField(p.id, 'indication', v), 'text', undefined, true)}
+                    </td>
+                    <td style={{ ...cellStyle(true), textAlign: 'left', minWidth: 200 }}>
+                      {renderEditableCell(p.mode_of_action || '', v => onUpdateProjectField(p.id, 'modeOfAction', v), 'text', undefined, true)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
+
+          {/* ── Phase Start Dates sub-tab ── */}
+          {subTab === 'dates' && (
+            <>
+              <thead>
+                <tr>
+                  <th style={frozenNameHeader}>Project</th>
+                  <th style={headerCellStyle}>Process Start</th>
+                  {PHASES.map(ph => (
+                    <th key={ph} style={headerCellStyle}>{PHASE_LABELS[ph]} Start</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, idx) => (
+                  <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                    <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
+                    <td style={cellStyle(true)}>
+                      {renderEditableCell(p.process_start_date ? decimalYearToDate(p.process_start_date) : '—', v => {}, 'text', undefined, false)}
+                    </td>
+                    {PHASES.map(ph => {
+                      const phIdx = PHASE_ORDER.indexOf(ph)
+                      const startDate = calculatePhaseStartDate(p.process_start_date, p.phases, phIdx)
+                      return (
+                        <td key={ph} style={cellStyle(!isPhaseActual(p, ph))}>
+                          <span style={{ color: isPhaseActual(p, ph) ? 'var(--green)' : 'var(--text-dim)' }}>
+                            {startDate ? decimalYearToDate(startDate) : '—'}
+                          </span>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
+
+          {/* ── Phase Durations sub-tab ── */}
+          {subTab === 'durations' && (
+            <>
+              <thead>
+                <tr>
+                  <th style={frozenNameHeader}>Project</th>
+                  {PHASES.map(ph => (
+                    <th key={ph} style={headerCellStyle}>{PHASE_LABELS[ph]} (mo)</th>
+                  ))}
+                  <th style={{ ...headerCellStyle, fontWeight: 700 }}>Total (mo)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, idx) => (
+                  <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                    <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
+                    {PHASES.map(ph => {
+                      const phase = getPhase(p, ph)
+                      const editable = isEditable(p, ph) && !!phase
+                      return (
+                        <td key={ph} style={cellStyle(editable)}>
+                          {phase ? renderEditableCell(
+                            phase.duration_months || 0,
+                            v => onUpdateProjectPhaseField(p.id, phase.id, 'durationMonths', parseInt(v)),
+                            'number', '1', editable
+                          ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                        </td>
+                      )
+                    })}
+                    <td style={{ ...cellStyle(false), fontWeight: 700, color: 'var(--accent)' }}>
+                      {(p.phases || []).reduce((s, ph) => s + (ph.duration_months || 0), 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
+
+          {/* ── Phase Probabilities sub-tab ── */}
+          {subTab === 'probabilities' && (
+            <>
+              <thead>
+                <tr>
+                  <th style={frozenNameHeader}>Project</th>
+                  {PHASES.map(ph => (
+                    <th key={ph} style={headerCellStyle}>{PHASE_LABELS[ph]} PoS</th>
+                  ))}
+                  <th style={{ ...headerCellStyle, fontWeight: 700 }}>Cumulative</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, idx) => {
+                  const cumPos = getCumulativePos(p.phases || [])
+                  return (
+                    <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                      <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
+                      {PHASES.map(ph => {
+                        const phase = getPhase(p, ph)
+                        const editable = isEditable(p, ph) && !!phase
+                        return (
+                          <td key={ph} style={cellStyle(editable)}>
+                            {phase ? renderEditableCell(
+                              phase.pos ?? 0.5,
+                              v => onUpdateProjectPhaseField(p.id, phase.id, 'pos', parseFloat(v)),
+                              'number', '0.01', editable
+                            ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                          </td>
+                        )
+                      })}
+                      <td style={{ ...cellStyle(false), fontWeight: 700, color: cumPos > 0.3 ? 'var(--green)' : cumPos > 0.1 ? 'var(--yellow)' : 'var(--red)' }}>
+                        {(cumPos * 100).toFixed(1)}%
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </>
+          )}
+
+          {/* ── Phase Costs sub-tab ── */}
+          {subTab === 'costs' && (
+            <>
+              <thead>
+                <tr>
+                  <th style={frozenNameHeader}>Project</th>
+                  {PHASES.map(ph => (
+                    <th key={ph} style={headerCellStyle}>{PHASE_LABELS[ph]} ($M)</th>
+                  ))}
+                  <th style={{ ...headerCellStyle, fontWeight: 700 }}>Total ($M)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, idx) => (
+                  <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                    <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
+                    {PHASES.map(ph => {
+                      const phase = getPhase(p, ph)
+                      const editable = isEditable(p, ph) && !!phase
+                      const totalCost = phase ? (phase.internal_cost || 0) + (phase.external_cost || 0) : 0
+                      return (
+                        <td key={ph} style={cellStyle(editable)}>
+                          {phase ? (
+                            editable ? renderEditableCell(
+                              totalCost,
+                              v => {
+                                // Split evenly between internal and external for simplicity
+                                const val = parseFloat(v)
+                                const ratio = phase.internal_cost ? phase.internal_cost / (totalCost || 1) : 0.5
+                                onUpdateProjectPhaseField(p.id, phase.id, 'internalCost', parseFloat((val * ratio).toFixed(1)))
+                                setTimeout(() => onUpdateProjectPhaseField(p.id, phase.id, 'externalCost', parseFloat((val * (1 - ratio)).toFixed(1))), 100)
+                              },
+                              'number', '0.1', true
+                            ) : <span style={{ color: 'var(--text-dim)' }}>{totalCost.toFixed(1)}</span>
+                          ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                        </td>
+                      )
+                    })}
+                    <td style={{ ...cellStyle(false), fontWeight: 700, color: 'var(--accent)' }}>
+                      {getTotalCost(p).toFixed(1)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
+
+          {/* ── Commercial sub-tab ── */}
+          {subTab === 'commercial' && (
+            <>
+              <thead>
+                <tr>
+                  <th style={frozenNameHeader}>Project</th>
+                  <th style={headerCellStyle}>Peak Sales ($M)</th>
+                  <th style={headerCellStyle}>Time to Peak (yr)</th>
+                  <th style={headerCellStyle}>COGS %</th>
+                  <th style={headerCellStyle}>M&S %</th>
+                  <th style={headerCellStyle}>LoE Year</th>
+                  <th style={{ ...headerCellStyle, fontWeight: 700 }}>eNPV ($M)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.map((p, idx) => {
+                  const enpv = calculateSimpleEnpv(p).enpv
+                  return (
+                    <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
+                      <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
+                      <td style={cellStyle(true)}>
+                        {renderEditableCell(p.peak_year_sales || 0, v => onUpdateProjectField(p.id, 'peakYearSales', parseFloat(v)), 'number', '1')}
+                      </td>
+                      <td style={cellStyle(true)}>
+                        {renderEditableCell(p.time_to_peak_years || 0, v => onUpdateProjectField(p.id, 'timeToPeakYears', parseFloat(v)), 'number', '0.5')}
+                      </td>
+                      <td style={cellStyle(true)}>
+                        {renderEditableCell(((p.cogs_rate || 0) * 100).toFixed(0), v => onUpdateProjectField(p.id, 'cogsRate', parseFloat(v) / 100), 'number', '1')}
+                      </td>
+                      <td style={cellStyle(true)}>
+                        {renderEditableCell(((p.ms_rate || 0) * 100).toFixed(0), v => onUpdateProjectField(p.id, 'msRate', parseFloat(v) / 100), 'number', '1')}
+                      </td>
+                      <td style={cellStyle(true)}>
+                        {renderEditableCell(p.loe_year || 0, v => onUpdateProjectField(p.id, 'loeYear', parseInt(v)), 'number', '1')}
+                      </td>
+                      <td style={{ ...cellStyle(false), fontWeight: 700, color: enpv >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {enpv.toFixed(0)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </>
+          )}
+
+        </table>
+      </div>
+    </div>
+  )
+}
+
 
 // ============================================================================
 // Compute detailed project financials (cash flow, P&L, decision tree data)
@@ -2879,6 +3262,45 @@ export default function PpmApp() {
     }
   }
 
+  // Per-project update functions for spreadsheet view
+  const updateProjectField = async (projectId, field, value) => {
+    try {
+      const res = await fetch(`/api/ppm/project/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, value })
+      })
+      if (!res.ok) throw new Error('Update failed')
+      const updated = await res.json()
+      if (portfolio) {
+        setPortfolio(prev => ({ ...prev, projects: prev.projects.map(p => p.id === updated.id ? updated : p) }))
+      }
+      if (selectedProject?.id === projectId) setSelectedProject(updated)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const updateProjectPhaseField = async (projectId, phaseId, field, value) => {
+    try {
+      const res = await fetch(`/api/ppm/project/${projectId}/phase`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phaseId, field, value })
+      })
+      if (!res.ok) throw new Error('Phase update failed')
+      const res2 = await fetch(`/api/ppm/project/${projectId}`)
+      if (!res2.ok) throw new Error('Reload failed')
+      const updated = await res2.json()
+      if (portfolio) {
+        setPortfolio(prev => ({ ...prev, projects: prev.projects.map(p => p.id === updated.id ? updated : p) }))
+      }
+      if (selectedProject?.id === projectId) setSelectedProject(updated)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   const handleSelectProject = (project) => {
     setSelectedProject(project)
     setProjectTab('detail')
@@ -2897,6 +3319,7 @@ export default function PpmApp() {
   // Portfolio tabs and sorted projects (must be before conditional returns for hooks rules)
   const portfolioTabs = [
     { id: 'table', label: 'Projects' },
+    { id: 'data', label: 'Input Data' },
     { id: 'bricks', label: 'Bricks' },
     { id: 'timeline', label: 'Timeline' },
     { id: 'cash-flow', label: 'Cash Flow & Revenue' },
@@ -3139,7 +3562,7 @@ export default function PpmApp() {
             ))}
           </select>
           <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setShowCreatePortfolio(true)}>+ New Portfolio</button>
-          <button className={styles.btn} onClick={() => setShowCreateProject(true)}>+ New Project</button>
+          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => setShowCreateProject(true)}>+ New Project</button>
           {portfolio && <button className={styles.btn} onClick={() => setShowManageProjects(true)}>Manage Projects</button>}
           {portfolio && (
             <button className={styles.btn} onClick={() => setShowSnapshot({ type: 'portfolio', id: portfolio.id, name: portfolio.name })}>
@@ -3314,6 +3737,15 @@ export default function PpmApp() {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {activeTab === 'data' && portfolio.projects && (
+            <SpreadsheetView
+              projects={sortedProjects}
+              onUpdateProjectField={updateProjectField}
+              onUpdateProjectPhaseField={updateProjectPhaseField}
+              onSelectProject={handleSelectProject}
+            />
           )}
 
           {activeTab === 'bricks' && portfolio.projects && (

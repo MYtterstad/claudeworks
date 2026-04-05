@@ -250,8 +250,9 @@
   background: var(--surface);
   border-radius: 0.625rem;
   border: 1px solid var(--border);
-  overflow: hidden;
+  overflow: auto;
   margin-bottom: 1.5rem;
+  max-height: calc(100vh - 20rem);
 }
 
 .table,
@@ -272,6 +273,9 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .table tbody td,
@@ -512,13 +516,14 @@
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 0.75rem;
+  height: calc(100vh - 22rem);
   min-height: 300px;
 }
 
 .phaseColumn {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  min-height: 0; /* allow flex child to shrink for overflow */
 }
 
 .phaseColumnHeader {
@@ -529,7 +534,29 @@
   text-align: center;
   padding: 0.625rem 0.5rem;
   border-radius: 0.5rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.5rem;
+  flex-shrink: 0;
+}
+
+.phaseColumnScroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-right: 0.25rem;
+}
+
+/* Thin scrollbar for brick columns */
+.phaseColumnScroll::-webkit-scrollbar {
+  width: 4px;
+}
+.phaseColumnScroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.phaseColumnScroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
 }
 
 .brick {
