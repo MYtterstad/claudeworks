@@ -6,7 +6,7 @@ import { getProject, updateProjectField, deleteProject } from '@/lib/db'
 export async function GET(req, { params }) {
   try {
     const { id } = params
-    const project = getProject(id)
+    const project = await getProject(id)
 
     if (!project) {
       return NextResponse.json(
@@ -36,7 +36,7 @@ export async function PUT(req, { params }) {
       )
     }
 
-    const updated = updateProjectField(id, field, value, userId)
+    const updated = await updateProjectField(id, field, value, userId)
     return NextResponse.json(updated)
   } catch (error) {
     return NextResponse.json(
@@ -49,7 +49,7 @@ export async function PUT(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     const { id } = params
-    deleteProject(id)
+    await deleteProject(id)
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json(

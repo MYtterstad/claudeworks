@@ -2143,7 +2143,8 @@ function SnapshotDiffTab({ project }) {
   const [snapshots, setSnapshots] = useState([])
   const [selectedSnapshots, setSelectedSnapshots] = useState([null, null])
   const [loading, setLoading] = useState(true)
-  const [diffData, setDiffData] = useState(null)
+  const [diffRows, setDiffRows] = useState(null)
+  const [includeNow, setIncludeNow] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -2153,57 +2154,115 @@ function SnapshotDiffTab({ project }) {
       .catch(() => setLoading(false))
   }, [project.id])
 
-  const loadDiff = async (snap1, snap2) => {
-    if (!snap1 || !snap2) return
-    // Fetch snapshot details and compare
-    try {
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/ppm/project/${project.id}/snapshot?snapshotId=${snap1.id}`),
-        fetch(`/api/ppm/project/${project.id}/snapshot?snapshotId=${snap2.id}`)
-      ])
-      const d1 = r1.ok ? await r1.json() : snap1
-      const d2 = r2.ok ? await r2.json() : snap2
+  // Pretty-print field labels
+  const labelMap = {
+    name: 'Name', ta: 'TA', modality: 'Modality', source: 'Source', indication: 'Indication',
+    mode_of_action: 'Mode of Action', current_phase: 'Phase', process_start_date: 'Process Start',
+    peak_year_sales: 'Peak Sales ($M)', time_to_peak_years: 'Time to Peak (yr)',
+    cogs_rate: 'COGS Rate', ms_rate: 'M&S Rate', loe_year: 'LoE Year',
+  }
 
-      // Build diff
-      const diff = {}
-      const allKeys = new Set([...Object.keys(d1 || {}), ...Object.keys(d2 || {})])
-      allKeys.forEach(key => {
-        if (d1?.[key] !== d2?.[key]) {
-          diff[key] = { old: d1?.[key], new: d2?.[key] }
+  const formatVal = (v) => {
+    if (v === null || v === undefined) return '—'
+    if (typeof v === 'boolean') return v ? 'Yes' : 'No'
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(2)
+    if (typeof v === 'object') return JSON.stringify(v)
+    return String(v)
+  }
+
+  const buildDiff = (d1, d2) => {
+    const rows = []
+    const skipKeys = new Set(['id', 'portfolio_id', 'created_at', 'updated_at', 'phases'])
+
+    // Top-level fields
+    const allKeys = new Set([...Object.keys(d1 || {}), ...Object.keys(d2 || {})])
+    for (const key of allKeys) {
+      if (skipKeys.has(key)) continue
+      const v1 = d1?.[key]
+      const v2 = d2?.[key]
+      if (JSON.stringify(v1) !== JSON.stringify(v2)) {
+        rows.push({ section: 'Project', field: labelMap[key] || key, from: formatVal(v1), to: formatVal(v2) })
+      }
+    }
+
+    // Phase-level comparison
+    const phases1 = d1?.phases || []
+    const phases2 = d2?.phases || []
+    const allPhases = new Set([...phases1.map(p => p.phase), ...phases2.map(p => p.phase)])
+    for (const phName of allPhases) {
+      const p1 = phases1.find(p => p.phase === phName)
+      const p2 = phases2.find(p => p.phase === phName)
+      const phaseSkip = new Set(['id', 'project_id', 'phase'])
+      const phFields = new Set([...Object.keys(p1 || {}), ...Object.keys(p2 || {})])
+      for (const f of phFields) {
+        if (phaseSkip.has(f)) continue
+        const v1 = p1?.[f]
+        const v2 = p2?.[f]
+        if (JSON.stringify(v1) !== JSON.stringify(v2)) {
+          const fLabel = f === 'duration_months' ? 'Duration (mo)' : f === 'pos' ? 'PoS'
+            : f === 'internal_cost' ? 'Internal Cost' : f === 'external_cost' ? 'External Cost'
+            : f === 'is_actual' ? 'Actual' : f === 'actual_date' ? 'Actual Date' : f === 'actual_cost' ? 'Actual Cost' : f
+          rows.push({ section: PHASE_LABELS[phName] || phName, field: fLabel, from: formatVal(v1), to: formatVal(v2) })
         }
-      })
-      setDiffData(diff)
+      }
+    }
+
+    return rows
+  }
+
+  const loadDiff = async (snap1, snap2) => {
+    if (!snap1 && !snap2) return
+    try {
+      let d1, d2
+      if (snap1 === 'current') {
+        d1 = project
+      } else if (snap1) {
+        const r1 = await fetch(`/api/ppm/project/${project.id}/snapshot?snapshotId=${snap1.id}`)
+        d1 = r1.ok ? await r1.json() : snap1
+      }
+      if (snap2 === 'current') {
+        d2 = project
+      } else if (snap2) {
+        const r2 = await fetch(`/api/ppm/project/${project.id}/snapshot?snapshotId=${snap2.id}`)
+        d2 = r2.ok ? await r2.json() : snap2
+      }
+      if (d1 && d2) setDiffRows(buildDiff(d1, d2))
     } catch (e) {
       console.error('Diff load failed:', e)
     }
   }
 
+  const selectStyle = {
+    width: '100%',
+    padding: '0.625rem 0.75rem',
+    border: '1px solid var(--border)',
+    borderRadius: '0.375rem',
+    background: 'var(--surface)',
+    color: 'var(--text)',
+    fontSize: '0.85rem'
+  }
+
+  const labelStyle = { display: 'block', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }
+
   if (loading) return <p style={{ color: 'var(--text-dim)' }}>Loading snapshots...</p>
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+      {/* Selector row */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
         <div>
-          <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Snapshot 1 (From)
-          </label>
+          <label style={labelStyle}>From</label>
           <select
-            value={selectedSnapshots[0]?.id || ''}
+            value={selectedSnapshots[0]?.id || (selectedSnapshots[0] === 'current' ? '__current__' : '')}
             onChange={e => {
-              const s = snapshots.find(x => x.id === e.target.value)
+              const val = e.target.value
+              const s = val === '__current__' ? 'current' : snapshots.find(x => x.id === val) || null
               setSelectedSnapshots([s, selectedSnapshots[1]])
               loadDiff(s, selectedSnapshots[1])
             }}
-            style={{
-              width: '100%',
-              padding: '0.625rem 0.75rem',
-              border: '1px solid var(--border)',
-              borderRadius: '0.375rem',
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              fontSize: '0.85rem'
-            }}>
+            style={selectStyle}>
             <option value="">Select snapshot...</option>
+            <option value="__current__">Current state</option>
             {snapshots.map(s => (
               <option key={s.id} value={s.id}>
                 {s.snapshot_name} ({new Date(s.created_at).toLocaleDateString()})
@@ -2212,26 +2271,18 @@ function SnapshotDiffTab({ project }) {
           </select>
         </div>
         <div>
-          <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Snapshot 2 (To)
-          </label>
+          <label style={labelStyle}>To</label>
           <select
-            value={selectedSnapshots[1]?.id || ''}
+            value={selectedSnapshots[1]?.id || (selectedSnapshots[1] === 'current' ? '__current__' : '')}
             onChange={e => {
-              const s = snapshots.find(x => x.id === e.target.value)
+              const val = e.target.value
+              const s = val === '__current__' ? 'current' : snapshots.find(x => x.id === val) || null
               setSelectedSnapshots([selectedSnapshots[0], s])
               loadDiff(selectedSnapshots[0], s)
             }}
-            style={{
-              width: '100%',
-              padding: '0.625rem 0.75rem',
-              border: '1px solid var(--border)',
-              borderRadius: '0.375rem',
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              fontSize: '0.85rem'
-            }}>
+            style={selectStyle}>
             <option value="">Select snapshot...</option>
+            <option value="__current__">Current state</option>
             {snapshots.map(s => (
               <option key={s.id} value={s.id}>
                 {s.snapshot_name} ({new Date(s.created_at).toLocaleDateString()})
@@ -2245,21 +2296,42 @@ function SnapshotDiffTab({ project }) {
         <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No snapshots available. Create snapshots to compare.</p>
       )}
 
-      {diffData && (
-        <div className={styles.diffGrid}>
-          {Object.entries(diffData).map(([field, changes]) => (
-            <div key={field} className={`${styles.diffCard} ${styles.diffChanged}`}>
-              <div style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                {field}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--red)', marginBottom: '0.375rem' }}>
-                Old: {changes.old !== undefined ? String(changes.old) : '(empty)'}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--green)' }}>
-                New: {changes.new !== undefined ? String(changes.new) : '(empty)'}
-              </div>
-            </div>
-          ))}
+      {/* Diff table */}
+      {diffRows && diffRows.length === 0 && (
+        <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--green)', fontSize: '0.9rem', fontWeight: 600 }}>
+          No differences found — snapshots are identical.
+        </div>
+      )}
+
+      {diffRows && diffRows.length > 0 && (
+        <div className={styles.tableContainer} style={{ maxHeight: '50vh' }}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Section</th>
+                <th>Field</th>
+                <th style={{ color: 'var(--red)' }}>From</th>
+                <th style={{ color: 'var(--green)' }}>To</th>
+              </tr>
+            </thead>
+            <tbody>
+              {diffRows.map((row, idx) => (
+                <tr key={idx} className={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}>
+                  <td style={{ fontWeight: 600, fontSize: '0.8rem' }}>{row.section}</td>
+                  <td style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>{row.field}</td>
+                  <td style={{ color: 'var(--red)', fontSize: '0.8rem', fontFamily: "'JetBrains Mono', monospace" }}>{row.from}</td>
+                  <td style={{ color: 'var(--green)', fontSize: '0.8rem', fontFamily: "'JetBrains Mono', monospace" }}>{row.to}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Summary */}
+      {diffRows && diffRows.length > 0 && (
+        <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+          {diffRows.length} change{diffRows.length !== 1 ? 's' : ''} found across {new Set(diffRows.map(r => r.section)).size} section{new Set(diffRows.map(r => r.section)).size !== 1 ? 's' : ''}
         </div>
       )}
     </div>
@@ -2271,11 +2343,13 @@ function SnapshotDiffTab({ project }) {
 // Chat Panel
 // ============================================================================
 
-function ChatPanel({ isOpen, onToggle }) {
+function ChatPanel({ isOpen, onToggle, onDataChanged }) {
   const [messages, setMessages] = useState([
-    { type: 'assistant', text: 'Ask me about your portfolio. Try: "Show summary", "Create a project", "Compare snapshots"' }
+    { type: 'assistant', text: 'Ask me about your portfolio. Try:\n• "Give me a summary of the Titan portfolio"\n• "What\'s the eNPV of Kronos?"\n• "Which projects have the highest risk?"\n• "Advance Phoebe to MARKET with date 2026-03-15"' }
   ])
   const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [conversationHistory, setConversationHistory] = useState([])
   const messagesRef = useRef(null)
 
   useEffect(() => {
@@ -2284,19 +2358,54 @@ function ChatPanel({ isOpen, onToggle }) {
     }
   }, [messages])
 
-  const handleSend = () => {
-    if (!input.trim()) return
+  const handleSend = async () => {
+    if (!input.trim() || loading) return
     const userMsg = input.trim()
     setInput('')
     setMessages(prev => [...prev, { type: 'user', text: userMsg }])
+    setLoading(true)
 
-    // Simulate response
-    setTimeout(() => {
+    // Build message history for the API
+    const newHistory = [...conversationHistory, { role: 'user', content: userMsg }]
+
+    try {
+      const res = await fetch('/api/ppm/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newHistory })
+      })
+      const data = await res.json()
+
+      if (data.error) {
+        setMessages(prev => [...prev, {
+          type: 'assistant',
+          text: data.error === 'ANTHROPIC_API_KEY not configured'
+            ? 'API key not configured yet. Add ANTHROPIC_API_KEY to your Vercel environment variables to enable the assistant.'
+            : `Error: ${data.error}`
+        }])
+      } else {
+        const assistantText = data.response || 'No response received.'
+        setMessages(prev => [...prev, { type: 'assistant', text: assistantText }])
+        setConversationHistory([...newHistory, { role: 'assistant', content: assistantText }])
+
+        // If the assistant used tools that modify data, refresh the UI
+        if (data.iterations > 1 && onDataChanged) {
+          onDataChanged()
+        }
+      }
+    } catch (err) {
       setMessages(prev => [...prev, {
         type: 'assistant',
-        text: 'Chat integration coming soon. For now, use the UI controls to manage your portfolio.'
+        text: `Connection error: ${err.message}. Make sure the server is running.`
       }])
-    }, 500)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleClearChat = () => {
+    setMessages([{ type: 'assistant', text: 'Chat cleared. How can I help with your portfolio?' }])
+    setConversationHistory([])
   }
 
   return (
@@ -2314,47 +2423,71 @@ function ChatPanel({ isOpen, onToggle }) {
           cursor: 'pointer',
           transition: 'all 0.15s'
         }}>
-        💬 Chat
+        {loading ? '⏳' : '💬'} Chat
       </button>
 
       <div className={`${styles.chatPanel} ${!isOpen ? styles.chatPanelHidden : ''}`}>
         <div className={styles.chatHeader}>
           <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>Portfolio Assistant</span>
-          <button
-            onClick={onToggle}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-dim)',
-              cursor: 'pointer',
-              fontSize: '1.2rem'
-            }}>
-            ✕
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              onClick={handleClearChat}
+              title="Clear chat"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-dim)',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+                opacity: 0.6,
+                padding: '0.2rem 0.4rem',
+                borderRadius: '0.25rem',
+              }}>
+              Clear
+            </button>
+            <button
+              onClick={onToggle}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-dim)',
+                cursor: 'pointer',
+                fontSize: '1.2rem'
+              }}>
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className={styles.chatMessages} ref={messagesRef}>
           {messages.map((msg, i) => (
-            <div key={i} className={msg.type === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant}>
+            <div key={i} className={msg.type === 'user' ? styles.chatBubbleUser : styles.chatBubbleAssistant}
+              style={{ whiteSpace: 'pre-wrap' }}>
               {msg.text}
             </div>
           ))}
+          {loading && (
+            <div className={styles.chatBubbleAssistant} style={{ opacity: 0.6, fontStyle: 'italic' }}>
+              Thinking...
+            </div>
+          )}
         </div>
 
         <div className={styles.chatInputArea}>
           <input
             type="text"
             className={styles.chatInput}
-            placeholder="Ask me..."
+            placeholder={loading ? 'Waiting for response...' : 'Ask about your portfolio...'}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleSend() }}
+            onKeyDown={e => { if (e.key === 'Enter' && !loading) handleSend() }}
+            disabled={loading}
           />
           <button
             className={styles.chatSendBtn}
             onClick={handleSend}
-            disabled={!input.trim()}>
-            Send
+            disabled={!input.trim() || loading}>
+            {loading ? '...' : 'Send'}
           </button>
         </div>
       </div>
@@ -3098,6 +3231,7 @@ export default function PpmApp() {
   const [view, setView] = useState('portfolio') // 'portfolio', 'project', 'settings'
   const [activeTab, setActiveTab] = useState('table')
   const [projectTab, setProjectTab] = useState('detail') // 'detail', 'audit', 'snapshots'
+  const [settingsTabState, setSettingsTabState] = useState('general')
 
   // Data
   const [portfolios, setPortfolios] = useState([])
@@ -3354,6 +3488,8 @@ export default function PpmApp() {
 
   // ── Settings View ──
   if (view === 'settings') {
+    const [settingsTab, setSettingsTab] = [settingsTabState, setSettingsTabState]
+
     return (
       <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
         <div className={styles.header}>
@@ -3369,32 +3505,124 @@ export default function PpmApp() {
           </div>
         </div>
 
-        <div className={styles.section}>
-          <h2>Data Management</h2>
-          <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-            Seed or reset the database with sample Titan portfolio data. This will <strong>clear all existing data</strong> including projects, portfolios, audit logs, and snapshots.
-          </p>
-          <button className={`${styles.btn} ${styles.btnDanger}`} onClick={seedData} disabled={loading}
-            style={{ marginRight: '0.75rem' }}>
-            {loading ? 'Seeding...' : 'Restore Default (Seed Titan Data)'}
-          </button>
-          <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={exportCaptario}
-            disabled={loading || !portfolio?.projects?.length}>
-            Export Portfolio to Captario
-          </button>
+        {/* Settings tabs */}
+        <div className={styles.tabBar} style={{ marginBottom: '1.5rem' }}>
+          {[
+            { id: 'general', label: 'General' },
+            { id: 'portfolio', label: 'Portfolio' },
+            { id: 'danger', label: 'Danger Zone' },
+            { id: 'about', label: 'About' },
+          ].map(tab => (
+            <button key={tab.id}
+              className={`${styles.tab} ${settingsTab === tab.id ? styles.tabActive : ''}`}
+              style={tab.id === 'danger' ? { color: settingsTab === 'danger' ? 'var(--red)' : 'var(--text-muted)' } : {}}
+              onClick={() => setSettingsTabState(tab.id)}>{tab.label}</button>
+          ))}
         </div>
 
-        <div className={styles.section} style={{ marginTop: '2rem' }}>
-          <h2>About</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem 1.5rem', fontSize: '0.85rem' }}>
-            <span style={{ color: 'var(--text-dim)' }}>Version</span>
-            <span style={{ color: 'var(--text)' }}>{APP_VERSION}</span>
-            <span style={{ color: 'var(--text-dim)' }}>Last deployed</span>
-            <span style={{ color: 'var(--text)' }}>{new Date(BUILD_DATE).toLocaleString()}</span>
-            <span style={{ color: 'var(--text-dim)' }}>Environment</span>
-            <span style={{ color: 'var(--text)' }}>{typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'Development (localhost)' : 'Production'}</span>
+        {/* General */}
+        {settingsTab === 'general' && (
+          <div className={styles.section}>
+            <h2>Appearance</h2>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)', minWidth: 80 }}>Theme</span>
+              <button
+                className={`${styles.btn} ${theme === 'dark' ? styles.btnPrimary : ''}`}
+                onClick={() => setTheme('dark')}
+                style={{ fontSize: '0.8rem' }}>
+                🌙 Dark
+              </button>
+              <button
+                className={`${styles.btn} ${theme === 'light' ? styles.btnPrimary : ''}`}
+                onClick={() => setTheme('light')}
+                style={{ fontSize: '0.8rem' }}>
+                ☀️ Light
+              </button>
+            </div>
+            <h2 style={{ marginTop: '2rem' }}>Discount Rate</h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+              Used for eNPV calculations across the portfolio. Default is 10%.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-dim)' }}>Rate:</span>
+              <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--accent)', fontFamily: "'JetBrains Mono', monospace" }}>
+                {((portfolio?.discount_rate || 0.1) * 100).toFixed(0)}%
+              </span>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Portfolio */}
+        {settingsTab === 'portfolio' && (
+          <div className={styles.section}>
+            <h2>Export</h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              Export the current portfolio to Captario JSON format for simulation.
+            </p>
+            <button className={`${styles.btn} ${styles.btnPrimary}`} onClick={exportCaptario}
+              disabled={loading || !portfolio?.projects?.length}>
+              Export Portfolio to Captario
+            </button>
+
+            <h2 style={{ marginTop: '2rem' }}>Portfolio Info</h2>
+            {portfolio ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem 1.5rem', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-dim)' }}>Name</span>
+                <span style={{ color: 'var(--text)' }}>{portfolio.name}</span>
+                <span style={{ color: 'var(--text-dim)' }}>Projects</span>
+                <span style={{ color: 'var(--text)' }}>{portfolio.projects?.length || 0}</span>
+                <span style={{ color: 'var(--text-dim)' }}>Discount rate</span>
+                <span style={{ color: 'var(--text)' }}>{((portfolio.discount_rate || 0.1) * 100).toFixed(0)}%</span>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>No portfolio selected</p>
+            )}
+          </div>
+        )}
+
+        {/* Danger Zone */}
+        {settingsTab === 'danger' && (
+          <div className={styles.section} style={{ border: '1px solid var(--red)', borderRadius: '0.625rem', padding: '1.5rem' }}>
+            <h2 style={{ color: 'var(--red)', marginBottom: '0.5rem' }}>Danger Zone</h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+              These actions are <strong>destructive and irreversible</strong>. They will wipe all existing data including projects, portfolios, audit logs, and snapshots, and replace with fresh seed data.
+            </p>
+            <button className={`${styles.btn} ${styles.btnDanger}`} onClick={() => {
+              if (window.confirm('This will DELETE all data and reseed with the Titan portfolio. Are you sure?')) {
+                seedData()
+              }
+            }} disabled={loading}>
+              {loading ? 'Seeding...' : 'Reset & Seed Titan Data'}
+            </button>
+          </div>
+        )}
+
+        {/* About */}
+        {settingsTab === 'about' && (
+          <div className={styles.section}>
+            <h2>Application</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '0.5rem 1.5rem', fontSize: '0.85rem' }}>
+              <span style={{ color: 'var(--text-dim)' }}>Name</span>
+              <span style={{ color: 'var(--text)' }}>Portfolio Manager (PPM)</span>
+              <span style={{ color: 'var(--text-dim)' }}>Version</span>
+              <span style={{ color: 'var(--text)', fontFamily: "'JetBrains Mono', monospace" }}>{APP_VERSION}</span>
+              <span style={{ color: 'var(--text-dim)' }}>Built</span>
+              <span style={{ color: 'var(--text)' }}>{new Date(BUILD_DATE).toLocaleString()}</span>
+              <span style={{ color: 'var(--text-dim)' }}>Environment</span>
+              <span style={{ color: 'var(--text)' }}>{typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'Development (localhost)' : 'Production'}</span>
+              <span style={{ color: 'var(--text-dim)' }}>Database</span>
+              <span style={{ color: 'var(--text)' }}>SQLite (local)</span>
+            </div>
+
+            <h2 style={{ marginTop: '2rem' }}>Powered by</h2>
+            <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', lineHeight: 1.6 }}>
+              Next.js 14 · React 18 · SQLite · Captario SUM integration
+            </p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '1rem' }}>
+              Built with Claude · Claudeworks
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -3540,7 +3768,14 @@ export default function PpmApp() {
             <p>{allProjects.length} projects · {portfolios.length} portfolios</p>
           </div>
           <div className={styles.headerActions}>
-            <ChatPanel isOpen={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />
+            <ChatPanel
+              isOpen={chatOpen}
+              onToggle={() => setChatOpen(!chatOpen)}
+              onDataChanged={async () => {
+                await Promise.all([loadPortfolios(), loadAllProjects()])
+                if (selectedPortfolioId) await loadPortfolio(selectedPortfolioId)
+              }}
+            />
             <button className={styles.themeToggle} onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
               {theme === 'dark' ? '☀️' : '🌙'} {theme === 'dark' ? 'Light' : 'Dark'}
             </button>

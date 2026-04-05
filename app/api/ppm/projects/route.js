@@ -6,7 +6,7 @@ import { getAllProjects, createProject } from '@/lib/db'
 // GET all projects (independent of portfolios)
 export async function GET() {
   try {
-    const projects = getAllProjects()
+    const projects = await getAllProjects()
     return NextResponse.json(projects)
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -20,7 +20,7 @@ export async function POST(req) {
     if (!data.id || !data.name || !data.currentPhase) {
       return NextResponse.json({ error: 'Missing required fields: id, name, currentPhase' }, { status: 400 })
     }
-    const project = createProject(data)
+    const project = await createProject(data)
     return NextResponse.json(project, { status: 201 })
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -11,12 +11,12 @@ export async function GET(req, { params }) {
     const snapshotId = url.searchParams.get('snapshotId')
 
     if (snapshotId) {
-      const snapshot = getProjectSnapshot(parseInt(snapshotId))
+      const snapshot = await getProjectSnapshot(parseInt(snapshotId))
       if (!snapshot) return NextResponse.json({ error: 'Snapshot not found' }, { status: 404 })
       return NextResponse.json(snapshot)
     }
 
-    const snapshots = getProjectSnapshots(id)
+    const snapshots = await getProjectSnapshots(id)
     return NextResponse.json(snapshots)
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -31,7 +31,7 @@ export async function POST(req, { params }) {
     if (!name) {
       return NextResponse.json({ error: 'Missing snapshot name' }, { status: 400 })
     }
-    const snapshot = createProjectSnapshot(id, name)
+    const snapshot = await createProjectSnapshot(id, name)
     return NextResponse.json(snapshot, { status: 201 })
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

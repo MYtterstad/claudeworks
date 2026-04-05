@@ -14,13 +14,20 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  try {
-    const reportPath = join(process.cwd(), 'data', 'Titan Portfolio Report.html')
-    const html = await readFile(reportPath, 'utf-8')
-    return new NextResponse(html, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
-  } catch {
-    return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+  // Try committed location first (Vercel), then data/ (local dev)
+  const paths = [
+    join(process.cwd(), 'lib', 'static', 'titan-report.html'),
+    join(process.cwd(), 'data', 'Titan Portfolio Report.html'),
+  ]
+
+  for (const p of paths) {
+    try {
+      const html = await readFile(p, 'utf-8')
+      return new NextResponse(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
+    } catch { /* try next path */ }
   }
+
+  return NextResponse.json({ error: 'Report not found' }, { status: 404 })
 }

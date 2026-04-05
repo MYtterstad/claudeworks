@@ -15,7 +15,7 @@ export async function PUT(req, { params }) {
       )
     }
 
-    const updated = updatePhaseField(phaseId, field, value, userId)
+    const updated = await updatePhaseField(phaseId, field, value, userId)
     return NextResponse.json(updated)
   } catch (error) {
     return NextResponse.json(

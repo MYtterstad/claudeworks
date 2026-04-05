@@ -13,7 +13,7 @@ export async function POST(req, { params }) {
       return NextResponse.json({ error: 'Missing actualDate' }, { status: 400 })
     }
 
-    const updated = advanceProjectPhase(id, actualDate, actualCost || 0)
+    const updated = await advanceProjectPhase(id, actualDate, actualCost || 0)
     return NextResponse.json(updated)
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

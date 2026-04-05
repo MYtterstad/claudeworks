@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
-import { db, clearAllData, createPortfolio, createProject, addPhase, addProjectToPortfolio } from '@/lib/db'
+import { clearAllData, createPortfolio, createProject, addPhase, addProjectToPortfolio } from '@/lib/db'
 
 // Helper to convert date string to decimal year
 function dateToDecimalYear(dateStr) {
@@ -327,10 +327,10 @@ const TITAN_PROJECTS = [
 export async function POST() {
   try {
     // Clear all existing data
-    clearAllData()
+    await clearAllData()
 
     // Create portfolio
-    const portfolio = createPortfolio(
+    const portfolio = await createPortfolio(
       'titan-portfolio',
       'Titan Portfolio 2026',
       null,
@@ -344,7 +344,7 @@ export async function POST() {
       const processStartDate = pcPhase ? dateToDecimalYear(pcPhase.date) : 2026
 
       // Create project (no portfolio_id — projects are independent)
-      createProject({
+      await createProject({
         id: projectData.id,
         name: projectData.name,
         currentPhase: projectData.currentPhase,
@@ -365,7 +365,7 @@ export async function POST() {
       for (const phase of projectData.phases) {
         const internalCost = phase.cost * 0.4
         const externalCost = phase.cost * 0.6
-        addPhase(
+        await addPhase(
           projectData.id,
           phase.phase,
           phase.months,
@@ -377,7 +377,7 @@ export async function POST() {
       }
 
       // Link project to portfolio
-      addProjectToPortfolio('titan-portfolio', projectData.id)
+      await addProjectToPortfolio('titan-portfolio', projectData.id)
     }
 
     return NextResponse.json(

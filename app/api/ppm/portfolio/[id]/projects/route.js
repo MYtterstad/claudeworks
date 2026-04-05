@@ -7,7 +7,7 @@ import { addProjectToPortfolio, removeProjectFromPortfolio, getProjectsForPortfo
 export async function GET(req, { params }) {
   try {
     const { id } = params
-    const projects = getProjectsForPortfolio(id)
+    const projects = await getProjectsForPortfolio(id)
     return NextResponse.json(projects)
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -22,7 +22,7 @@ export async function POST(req, { params }) {
     if (!projectId) {
       return NextResponse.json({ error: 'Missing projectId' }, { status: 400 })
     }
-    addProjectToPortfolio(id, projectId)
+    await addProjectToPortfolio(id, projectId)
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -37,7 +37,7 @@ export async function DELETE(req, { params }) {
     if (!projectId) {
       return NextResponse.json({ error: 'Missing projectId' }, { status: 400 })
     }
-    removeProjectFromPortfolio(id, projectId)
+    await removeProjectFromPortfolio(id, projectId)
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
