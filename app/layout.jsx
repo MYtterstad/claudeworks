@@ -1,5 +1,4 @@
 import './globals.css'
-import AuthProvider from '@/app/_components/AuthProvider'
 
 export const metadata = {
   title: 'Claudeworks!',
@@ -16,7 +15,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        {children}
       </body>
     </html>
   )

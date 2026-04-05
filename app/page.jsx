@@ -3,7 +3,7 @@ import allApps from './apps/_registry'
 const apps = allApps.filter(app => app.listed !== false)
 import AppCard from './_components/AppCard'
 import HomeComments from './_components/HomeComments'
-import UserMenu from './_components/UserMenu'
+// UserMenu removed — auth system replaced by password gate
 
 export default function Home() {
   return (
@@ -24,7 +24,7 @@ export default function Home() {
         }}>
           Claudeworks!
         </div>
-        <UserMenu />
+        {/* User menu placeholder */}
       </div>
 
       {/* Hero */}
