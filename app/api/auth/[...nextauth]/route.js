@@ -1,4 +1,3 @@
-// Force this route to be dynamic — prevents Next.js from evaluating it at build time
 export const dynamic = 'force-dynamic'
 
 import NextAuth from 'next-auth'
@@ -16,42 +15,19 @@ const handler = NextAuth({
         if (!credentials?.email || !credentials?.password) {
           throw new Error('Invalid credentials')
         }
-
-        // Dynamic import — only loads lib/db (and better-sqlite3) at request time
         const { getUserByEmail, verifyPassword } = await import('@/lib/db')
-
         const user = getUserByEmail(credentials.email)
-
-        if (!user) {
-          throw new Error('User not found')
-        }
-
+        if (!user) throw new Error('User not found')
         const passwordValid = verifyPassword(credentials.password, user.password_hash)
-
-        if (!passwordValid) {
-          throw new Error('Invalid password')
-        }
-
-        // Return user object (without password_hash)
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-        }
+        if (!passwordValid) throw new Error('Invalid password')
+        return { id: user.id, email: user.email, name: user.name }
       },
     }),
   ],
-  pages: {
-    signIn: '/auth',
-    error: '/auth',
-  },
+  pages: { signIn: '/auth', error: '/auth' },
   callbacks: {
     async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id
-        token.email = user.email
-        token.name = user.name
-      }
+      if (user) { token.id = user.id; token.email = user.email; token.name = user.name }
       return token
     },
     async session({ session, token }) {
@@ -62,13 +38,8 @@ const handler = NextAuth({
     },
   },
   secret: process.env.NEXTAUTH_SECRET || 'dev-secret-change-in-production',
-  session: {
-    strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
-  jwt: {
-    maxAge: 30 * 24 * 60 * 60, // 30 days
-  },
+  session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 },
+  jwt: { maxAge: 30 * 24 * 60 * 60 },
 })
 
 export { handler as GET, handler as POST }
