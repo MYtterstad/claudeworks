@@ -143,12 +143,12 @@ function inputDateToDecimalYear(dateStr) {
 }
 
 function calculatePhaseStartDate(processStartDate, phases, phaseIndex) {
-  if (!processStartDate) return 'N/A'
+  if (!processStartDate) return null
   let accumulatedYears = 0
   for (let i = 0; i < phaseIndex; i++) {
-    accumulatedYears += (phases[i].duration_months || 0) / 12
+    accumulatedYears += ((phases[i]?.duration_months) || 0) / 12
   }
-  return decimalYearToDate(processStartDate + accumulatedYears)
+  return processStartDate + accumulatedYears
 }
 
 function getCumulativePos(phases) {
