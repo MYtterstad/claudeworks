@@ -331,13 +331,13 @@
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
-/* Hide number input spinners globally within PPM app */
-:global(.ppm-app) input[type="number"]::-webkit-outer-spin-button,
-:global(.ppm-app) input[type="number"]::-webkit-inner-spin-button {
+/* Hide number input spinners within PPM container */
+.container input[type="number"]::-webkit-outer-spin-button,
+.container input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
-:global(.ppm-app) input[type="number"] {
+.container input[type="number"] {
   -moz-appearance: textfield;
 }
 

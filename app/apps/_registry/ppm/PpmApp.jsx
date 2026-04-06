@@ -3627,7 +3627,7 @@ export default function PpmApp() {
     const [settingsTab, setSettingsTab] = [settingsTabState, setSettingsTabState]
 
     return (
-      <div className={`ppm-app ${styles.container} ${theme === 'light' ? styles.light : ''}`}>
+      <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
         <div className={styles.header}>
           <div className={styles.headerInfo}>
             <h1>Settings</h1>
@@ -3773,7 +3773,7 @@ export default function PpmApp() {
     const projRemCost = getTotalRemainingCost(selectedProject)
 
     return (
-      <div className={`ppm-app ${styles.container} ${theme === 'light' ? styles.light : ''}`}>
+      <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
         {/* Sticky: header + KPI metrics + tab bar */}
         <div className={styles.stickyTop}>
           <div className={styles.header}>
@@ -3894,7 +3894,7 @@ export default function PpmApp() {
 
   // ── Portfolio View ──
   return (
-    <div className={`ppm-app ${styles.container} ${theme === 'light' ? styles.light : ''}`}>
+    <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
       {/* Single sticky section: header + selector + (when portfolio: KPIs + tabs) */}
       <div className={styles.stickyTop}>
         {/* Header */}
