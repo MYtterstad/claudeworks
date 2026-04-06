@@ -1339,16 +1339,16 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
     borderRight: '1px solid var(--border)',
   }
 
-  const renderEditableCell = (value, onCommit, type = 'number', step = '1', editable = true) => {
+  const renderEditableCell = (value, onCommit, type = 'number', step = '1', editable = true, align = 'right') => {
     if (!editable) {
-      return <span style={{ color: 'var(--text-dim)' }}>{type === 'number' ? (typeof value === 'number' ? value : '—') : (value || '—')}</span>
+      return <span style={{ color: 'var(--text-dim)', display: 'block', textAlign: align }}>{type === 'number' ? (typeof value === 'number' ? value : '—') : (value || '—')}</span>
     }
     return (
       <EditableInput
         type={type}
         step={step}
         value={value ?? ''}
-        style={{ width: '100%', maxWidth: 90, textAlign: 'right', background: 'transparent', border: '1px solid transparent', borderRadius: 4, padding: '0.2rem 0.4rem', color: 'var(--text)', fontSize: '0.8rem' }}
+        style={{ width: '100%', maxWidth: align === 'left' ? 200 : 90, textAlign: align, background: 'transparent', border: '1px solid transparent', borderRadius: 4, padding: '0.2rem 0.4rem', color: 'var(--text)', fontSize: '0.8rem' }}
         onCommit={onCommit}
       />
     )
@@ -1407,19 +1407,19 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
                       }}>{p.current_phase}</span>
                     </td>
                     <td style={{ ...cellStyle(true), textAlign: 'left' }}>
-                      {renderEditableCell(p.ta || '', v => onUpdateProjectField(p.id, 'ta', v), 'text', undefined, true)}
+                      {renderEditableCell(p.ta || '', v => onUpdateProjectField(p.id, 'ta', v), 'text', undefined, true, 'left')}
                     </td>
                     <td style={{ ...cellStyle(true), textAlign: 'left' }}>
-                      {renderEditableCell(p.modality || '', v => onUpdateProjectField(p.id, 'modality', v), 'text', undefined, true)}
+                      {renderEditableCell(p.modality || '', v => onUpdateProjectField(p.id, 'modality', v), 'text', undefined, true, 'left')}
                     </td>
                     <td style={{ ...cellStyle(true), textAlign: 'left' }}>
-                      {renderEditableCell(p.source || '', v => onUpdateProjectField(p.id, 'source', v), 'text', undefined, true)}
+                      {renderEditableCell(p.source || '', v => onUpdateProjectField(p.id, 'source', v), 'text', undefined, true, 'left')}
                     </td>
                     <td style={{ ...cellStyle(true), textAlign: 'left', minWidth: 200 }}>
-                      {renderEditableCell(p.indication || '', v => onUpdateProjectField(p.id, 'indication', v), 'text', undefined, true)}
+                      {renderEditableCell(p.indication || '', v => onUpdateProjectField(p.id, 'indication', v), 'text', undefined, true, 'left')}
                     </td>
                     <td style={{ ...cellStyle(true), textAlign: 'left', minWidth: 200 }}>
-                      {renderEditableCell(p.mode_of_action || '', v => onUpdateProjectField(p.id, 'modeOfAction', v), 'text', undefined, true)}
+                      {renderEditableCell(p.mode_of_action || '', v => onUpdateProjectField(p.id, 'modeOfAction', v), 'text', undefined, true, 'left')}
                     </td>
                   </tr>
                 ))}
