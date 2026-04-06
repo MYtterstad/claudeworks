@@ -419,7 +419,7 @@ function BricksTab({ projects, onSelectProject }) {
 // Timeline Tab — Canvas Gantt with Today line
 // ============================================================================
 
-function TimelineTab({ projects, theme }) {
+function TimelineTab({ projects, theme, onSelectProject }) {
   const canvasRef = useRef(null)
   const scrollRef = useRef(null)
   const colors = getColors(theme)
@@ -567,11 +567,14 @@ function TimelineTab({ projects, theme }) {
           {projects.map((p, idx) => (
             <div key={p.id} style={{
               height: ROW_H, display: 'flex', alignItems: 'center', padding: '0 0.75rem',
-              fontSize: '0.8rem', fontWeight: 500, color: 'var(--text)',
+              fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent)',
               background: idx % 2 === 0 ? 'var(--surface2)' : 'transparent',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              borderBottom: idx < projects.length - 1 ? '1px solid transparent' : 'none'
-            }}>
+              borderBottom: idx < projects.length - 1 ? '1px solid transparent' : 'none',
+              cursor: onSelectProject ? 'pointer' : 'default'
+            }}
+              onClick={() => onSelectProject && onSelectProject(p)}
+            >
               {p.name}
             </div>
           ))}
@@ -628,7 +631,7 @@ function TimelineTab({ projects, theme }) {
 // Cash Flow & Revenue Tab
 // ============================================================================
 
-function CashFlowRevenueTab({ projects, discountRate, theme }) {
+function CashFlowRevenueTab({ projects, discountRate, theme, onSelectProject }) {
   const [hiddenProjects, setHiddenProjects] = useState(new Set())
 
   // Canvas refs
@@ -1172,7 +1175,7 @@ function CashFlowRevenueTab({ projects, discountRate, theme }) {
           <tbody>
             {enriched.map((p, idx) => (
               <tr key={p.id} className={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}>
-                <td className={styles.nameCell}>{p.name}</td>
+                <td className={styles.nameCell} style={{ cursor: 'pointer' }} onClick={() => onSelectProject && onSelectProject(p)}>{p.name}</td>
                 <td style={{ textAlign: 'right' }}>${(p.peak_year_sales || 0).toFixed(0)}M</td>
                 <td style={{ textAlign: 'right' }}>{(p.cumPos * 100).toFixed(0)}%</td>
                 <td style={{ textAlign: 'right' }} className={styles.dateCell}>{p.launch ? decimalYearToShortDate(p.launch) : 'N/A'}</td>
@@ -1277,14 +1280,20 @@ const SPREADSHEET_TABS = [
 
 function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseField, onSelectProject }) {
   const [subTab, setSubTab] = useState('attributes')
+  const [confirmEdit, setConfirmEdit] = useState(null) // { projectId, field, value, label }
 
   const PHASES = ['PC', 'PH1', 'PH2', 'PH3', 'REG']
 
   const getPhase = (project, phaseName) => (project.phases || []).find(p => p.phase === phaseName)
   const isPhaseActual = (project, phaseName) => getPhase(project, phaseName)?.is_actual || false
 
-  // Determine if a field is in the "future" (editable) — actual phases are locked
-  const isEditable = (project, phaseName) => !isPhaseActual(project, phaseName)
+  // All phases are editable, but actuals and process start dates need confirmation
+  const isEditable = () => true
+
+  // Wrap onCommit with confirmation for actuals or process start dates
+  const withConfirmation = (projectId, field, label, onCommit) => (newValue) => {
+    setConfirmEdit({ projectId, field, value: newValue, label, onCommit: () => onCommit(newValue) })
+  }
 
   const cellStyle = (editable) => ({
     textAlign: 'right',
@@ -1444,16 +1453,54 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
                   <tr key={p.id} style={{ background: idx % 2 === 0 ? 'var(--surface)' : 'var(--bg)' }}>
                     <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
                     <td style={cellStyle(true)}>
-                      {renderEditableCell(p.process_start_date ? decimalYearToDate(p.process_start_date) : '—', v => {}, 'text', undefined, false)}
+                      <input
+                        type="date"
+                        value={p.process_start_date ? decimalYearToInputDate(p.process_start_date) : ''}
+                        onChange={e => {
+                          const dec = inputDateToDecimalYear(e.target.value)
+                          if (dec) withConfirmation(p.id, 'processStartDate', `Change process start date for ${p.name}?`, v => onUpdateProjectField(p.id, 'processStartDate', v))(dec)
+                        }}
+                        style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 4, padding: '0.2rem 0.4rem', color: 'var(--text)', fontSize: '0.8rem', width: '100%', maxWidth: 130 }}
+                      />
                     </td>
                     {PHASES.map(ph => {
                       const phIdx = PHASE_ORDER.indexOf(ph)
                       const startDate = calculatePhaseStartDate(p.process_start_date, p.phases, phIdx)
+                      const isActual = isPhaseActual(p, ph)
                       return (
-                        <td key={ph} style={cellStyle(!isPhaseActual(p, ph))}>
-                          <span style={{ color: isPhaseActual(p, ph) ? 'var(--green)' : 'var(--text-dim)' }}>
-                            {startDate ? decimalYearToDate(startDate) : '—'}
-                          </span>
+                        <td key={ph} style={cellStyle(true)}>
+                          {phIdx === 0 ? (
+                            <span style={{ color: isActual ? 'var(--green)' : 'var(--text-dim)' }}>
+                              {startDate ? decimalYearToDate(startDate) : '—'}
+                            </span>
+                          ) : (
+                            <input
+                              type="date"
+                              value={startDate ? decimalYearToInputDate(startDate) : ''}
+                              onChange={e => {
+                                const newDecimal = inputDateToDecimalYear(e.target.value)
+                                if (!newDecimal || !p.process_start_date) return
+                                // Calculate what the previous phase duration should be
+                                const prevPhIdx = phIdx - 1
+                                let accBefore = 0
+                                for (let i = 0; i < prevPhIdx; i++) {
+                                  accBefore += ((p.phases[i]?.duration_months) || 0) / 12
+                                }
+                                const prevPhaseStart = p.process_start_date + accBefore
+                                const newDurationMonths = Math.round((newDecimal - prevPhaseStart) * 12)
+                                if (newDurationMonths < 0) return
+                                const prevPhase = p.phases[prevPhIdx]
+                                if (!prevPhase) return
+                                const commitFn = () => onUpdateProjectPhaseField(p.id, prevPhase.id, 'durationMonths', newDurationMonths)
+                                if (isActual) {
+                                  withConfirmation(p.id, 'phaseDate', `Change ${PHASE_LABELS[ph]} start date (adjusts ${PHASE_LABELS[p.phases[prevPhIdx].phase]} duration to ${newDurationMonths}mo)?`, commitFn)(newDurationMonths)
+                                } else {
+                                  commitFn()
+                                }
+                              }}
+                              style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 4, padding: '0.2rem 0.4rem', color: isActual ? 'var(--green)' : 'var(--text)', fontSize: '0.8rem', width: '100%', maxWidth: 130 }}
+                            />
+                          )}
                         </td>
                       )
                     })}
@@ -1481,12 +1528,14 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
                     <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
                     {PHASES.map(ph => {
                       const phase = getPhase(p, ph)
-                      const editable = isEditable(p, ph) && !!phase
+                      const isActual = isPhaseActual(p, ph)
+                      const editable = !!phase
+                      const commitFn = v => onUpdateProjectPhaseField(p.id, phase.id, 'durationMonths', parseInt(v))
                       return (
                         <td key={ph} style={cellStyle(editable)}>
                           {phase ? renderEditableCell(
                             phase.duration_months || 0,
-                            v => onUpdateProjectPhaseField(p.id, phase.id, 'durationMonths', parseInt(v)),
+                            isActual ? withConfirmation(p.id, 'duration', `Edit actual duration for ${PHASE_LABELS[ph]}?`, commitFn) : commitFn,
                             'number', '1', editable
                           ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                         </td>
@@ -1521,12 +1570,14 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
                       <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
                       {PHASES.map(ph => {
                         const phase = getPhase(p, ph)
-                        const editable = isEditable(p, ph) && !!phase
+                        const isActual = isPhaseActual(p, ph)
+                        const editable = !!phase
+                        const commitFn = v => onUpdateProjectPhaseField(p.id, phase.id, 'pos', parseFloat(v))
                         return (
                           <td key={ph} style={cellStyle(editable)}>
                             {phase ? renderEditableCell(
                               phase.pos ?? 0.5,
-                              v => onUpdateProjectPhaseField(p.id, phase.id, 'pos', parseFloat(v)),
+                              isActual ? withConfirmation(p.id, 'pos', `Edit actual PoS for ${PHASE_LABELS[ph]}?`, commitFn) : commitFn,
                               'number', '0.01', editable
                             ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                           </td>
@@ -1560,22 +1611,21 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
                     <td style={frozenNameStyle} onClick={() => onSelectProject(p)}>{p.name}</td>
                     {PHASES.map(ph => {
                       const phase = getPhase(p, ph)
-                      const editable = isEditable(p, ph) && !!phase
+                      const isActual = isPhaseActual(p, ph)
+                      const editable = !!phase
                       const totalCost = phase ? (phase.internal_cost || 0) + (phase.external_cost || 0) : 0
+                      const costCommitFn = v => {
+                        const val = parseFloat(v)
+                        const ratio = phase.internal_cost ? phase.internal_cost / (totalCost || 1) : 0.5
+                        onUpdateProjectPhaseField(p.id, phase.id, 'internalCost', parseFloat((val * ratio).toFixed(1)))
+                        setTimeout(() => onUpdateProjectPhaseField(p.id, phase.id, 'externalCost', parseFloat((val * (1 - ratio)).toFixed(1))), 100)
+                      }
                       return (
                         <td key={ph} style={cellStyle(editable)}>
-                          {phase ? (
-                            editable ? renderEditableCell(
-                              totalCost,
-                              v => {
-                                // Split evenly between internal and external for simplicity
-                                const val = parseFloat(v)
-                                const ratio = phase.internal_cost ? phase.internal_cost / (totalCost || 1) : 0.5
-                                onUpdateProjectPhaseField(p.id, phase.id, 'internalCost', parseFloat((val * ratio).toFixed(1)))
-                                setTimeout(() => onUpdateProjectPhaseField(p.id, phase.id, 'externalCost', parseFloat((val * (1 - ratio)).toFixed(1))), 100)
-                              },
-                              'number', '0.1', true
-                            ) : <span style={{ color: 'var(--text-dim)' }}>{totalCost.toFixed(1)}</span>
+                          {phase ? renderEditableCell(
+                            totalCost,
+                            isActual ? withConfirmation(p.id, 'cost', `Edit actual cost for ${PHASE_LABELS[ph]}?`, costCommitFn) : costCommitFn,
+                            'number', '0.1', editable
                           ) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                         </td>
                       )
@@ -1636,6 +1686,30 @@ function SpreadsheetView({ projects, onUpdateProjectField, onUpdateProjectPhaseF
 
         </table>
       </div>
+
+      {/* Confirmation dialog for editing actuals / process start dates */}
+      {confirmEdit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setConfirmEdit(null)}>
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '0.75rem', padding: '1.5rem 2rem', maxWidth: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: 'var(--yellow)' }}>⚠ Confirm Edit</h3>
+            <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: 'var(--text-dim)', lineHeight: 1.5 }}>
+              {confirmEdit.label}
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmEdit(null)}
+                style={{ padding: '0.5rem 1rem', border: '1px solid var(--border)', borderRadius: '0.375rem', background: 'transparent', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '0.8rem' }}>
+                Cancel
+              </button>
+              <button onClick={() => { confirmEdit.onCommit(); setConfirmEdit(null) }}
+                style={{ padding: '0.5rem 1rem', border: 'none', borderRadius: '0.375rem', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1731,6 +1805,10 @@ function computeProjectFinancials(project, discountRate = 0.1) {
     return s + ((d.grossRevenue * (1 - cogsRate - msRate)) - d.devCosts) / disc
   }, 0)
 
+  // Find current phase index (first non-actual phase, or 0 if all actual)
+  const currentPhaseIdx = phases.findIndex(p => !p.is_actual)
+  const effectiveCurrentIdx = currentPhaseIdx === -1 ? phases.length : currentPhaseIdx
+
   // Backward induction through phases
   const treeNodes = phases.map((phase, idx) => {
     const pos = phase.pos || 0.5
@@ -1739,11 +1817,22 @@ function computeProjectFinancials(project, discountRate = 0.1) {
     for (let i = 0; i <= idx; i++) {
       cumDevCost += (phases[i].internal_cost || 0) + (phases[i].external_cost || 0)
     }
+    // cumProb from start (used internally)
     let cumProb = 1
     for (let i = 0; i <= idx; i++) {
       cumProb *= (phases[i].pos || 0.5)
     }
-    return { phase: phase.phase, pos, cost, cumDevCost, cumProb, isActual: phase.is_actual }
+    // forwardCumProb: probability of reaching this phase from current phase
+    let forwardCumProb = 1
+    for (let i = effectiveCurrentIdx; i <= idx; i++) {
+      forwardCumProb *= (phases[i].pos || 0.5)
+    }
+    // forwardReachProb: probability of reaching (entering) this phase from current phase
+    let forwardReachProb = 1
+    for (let i = effectiveCurrentIdx; i < idx; i++) {
+      forwardReachProb *= (phases[i].pos || 0.5)
+    }
+    return { phase: phase.phase, pos, cost, cumDevCost, cumProb, forwardCumProb, forwardReachProb, isActual: phase.is_actual }
   })
 
   // Backward induction: compute eNPV at each node
@@ -2014,7 +2103,7 @@ function DecisionTreeTab({ project, discountRate = 0.1 }) {
   const nodeW = 150
   const nodeH = 100
   const gapX = 30
-  const failH = 60
+  const failH = 68
   const failGap = 30
   const rowH = nodeH + failH + failGap + 20
 
@@ -2080,23 +2169,32 @@ function DecisionTreeTab({ project, discountRate = 0.1 }) {
                 Cost: ${node.cost.toFixed(0)}M · {(node.pos * 100).toFixed(0)}% PoS
               </text>
               <text x={x + nodeW / 2} y={y + (isActual ? 66 : 58)} textAnchor="middle" fill="var(--text)" fontSize={11} fontWeight={600}>
-                eNPV: ${node.enpv.toFixed(0)}M
+                P(reach): {(node.forwardReachProb * 100).toFixed(1)}%
               </text>
               <text x={x + nodeW / 2} y={y + (isActual ? 82 : 76)} textAnchor="middle" fill="var(--text-muted)" fontSize={10}>
-                Cum P: {(node.cumProb * 100).toFixed(1)}%
+                eNPV: ${node.enpv.toFixed(0)}M
               </text>
 
               {/* Failure branch */}
               <line x1={x + nodeW / 2} y1={y + nodeH} x2={x + nodeW / 2} y2={y + nodeH + failGap}
                 stroke="var(--red)" strokeWidth={1} strokeDasharray="4,3" />
+              {/* Failure probability on vertical connector */}
+              <text x={x + nodeW / 2 + 8} y={y + nodeH + failGap / 2 + 3}
+                textAnchor="start" fill="var(--red)" fontSize={9} fontWeight={600}>
+                {((1 - node.pos) * 100).toFixed(0)}%
+              </text>
               <rect x={x + 10} y={y + nodeH + failGap} width={nodeW - 20} height={failH} rx={6}
                 fill="rgba(248,113,113,0.08)" stroke="var(--red)" strokeWidth={1} />
               <text x={x + nodeW / 2} y={y + nodeH + failGap + 20} textAnchor="middle"
                 fill="var(--red)" fontSize={10} fontWeight={600}>
-                FAIL ({((1 - node.pos) * 100).toFixed(0)}%)
+                FAIL
               </text>
-              <text x={x + nodeW / 2} y={y + nodeH + failGap + 38} textAnchor="middle"
-                fill="var(--text-muted)" fontSize={10}>
+              <text x={x + nodeW / 2} y={y + nodeH + failGap + 36} textAnchor="middle"
+                fill="var(--text-muted)" fontSize={9}>
+                P: {(node.forwardReachProb * (1 - node.pos) * 100).toFixed(1)}%
+              </text>
+              <text x={x + nodeW / 2} y={y + nodeH + failGap + 50} textAnchor="middle"
+                fill="var(--text-muted)" fontSize={9}>
                 NPV: ${node.failValue.toFixed(0)}M
               </text>
             </g>
@@ -2211,7 +2309,7 @@ function SnapshotDiffTab({ project }) {
   }
 
   const loadDiff = async (snap1, snap2) => {
-    if (!snap1 && !snap2) return
+    if (!snap1 || !snap2) return
     try {
       let d1, d2
       if (snap1 === 'current') {
@@ -2657,8 +2755,14 @@ function ProjectInputForm({ project, canAdvance, onAdvance, onUpdateField, onUpd
         <div className={styles.paramsGrid}>
           <div className={styles.param}>
             <label>Process Start Date</label>
-            <EditableInput type="number" step="0.01" value={project.process_start_date || 0}
-              onCommit={v => onUpdateField('processStartDate', v)} />
+            <input type="date"
+              value={project.process_start_date ? decimalYearToInputDate(project.process_start_date) : ''}
+              onChange={e => {
+                const dec = inputDateToDecimalYear(e.target.value)
+                if (dec) onUpdateField('processStartDate', dec)
+              }}
+              style={{ padding: '0.5rem 0.75rem', border: '1px solid var(--border)', borderRadius: '0.375rem', background: 'var(--bg)', color: 'var(--text)', fontFamily: "'SF Mono', 'Monaco', 'Menlo', monospace", fontSize: '0.85rem' }}
+            />
           </div>
           <div className={styles.param}>
             <label>Peak Year Sales ($M)</label>
@@ -2719,6 +2823,7 @@ function ProjectInputForm({ project, canAdvance, onAdvance, onUpdateField, onUpd
               <tr>
                 <th>Phase</th>
                 <th style={{ textAlign: 'center' }}>Status</th>
+                <th style={{ textAlign: 'right' }}>Start Date</th>
                 <th style={{ textAlign: 'right' }}>Duration (mo)</th>
                 <th style={{ textAlign: 'right' }}>PoS</th>
                 <th style={{ textAlign: 'right' }}>Internal Cost ($M)</th>
@@ -2730,6 +2835,7 @@ function ProjectInputForm({ project, canAdvance, onAdvance, onUpdateField, onUpd
               {project.phases?.map((phase, idx) => {
                 const isLocked = phase.is_actual && !actualsUnlocked
                 const totalCost = (phase.internal_cost || 0) + (phase.external_cost || 0)
+                const phaseStartDecimal = calculatePhaseStartDate(project.process_start_date, project.phases, idx)
                 return (
                   <tr key={phase.id} className={idx % 2 === 0 ? styles.rowEven : styles.rowOdd}
                     style={{ opacity: isLocked ? 0.7 : 1 }}>
@@ -2749,30 +2855,60 @@ function ProjectInputForm({ project, canAdvance, onAdvance, onUpdateField, onUpd
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
+                      {phase.is_actual ? (
+                        <span style={{ color: 'var(--green)', fontSize: '0.8rem' }}>{phaseStartDecimal ? decimalYearToDate(phaseStartDecimal) : '—'}</span>
+                      ) : (
+                        <input type="date"
+                          value={phaseStartDecimal ? decimalYearToInputDate(phaseStartDecimal) : ''}
+                          onChange={e => {
+                            if (idx === 0) {
+                              // Changing first phase start = changing process start date
+                              const dec = inputDateToDecimalYear(e.target.value)
+                              if (dec) onUpdateField('processStartDate', dec)
+                            } else {
+                              // Changing phase N start = changing phase N-1 duration
+                              const newDecimal = inputDateToDecimalYear(e.target.value)
+                              if (!newDecimal || !project.process_start_date) return
+                              let accBefore = 0
+                              for (let i = 0; i < idx - 1; i++) {
+                                accBefore += ((project.phases[i]?.duration_months) || 0) / 12
+                              }
+                              const prevPhaseStart = project.process_start_date + accBefore
+                              const newDurationMonths = Math.round((newDecimal - prevPhaseStart) * 12)
+                              if (newDurationMonths >= 0) {
+                                onUpdatePhaseField(project.phases[idx - 1].id, 'durationMonths', newDurationMonths)
+                              }
+                            }
+                          }}
+                          style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: '0.25rem', padding: '0.25rem 0.5rem', color: 'var(--text)', fontSize: '0.8rem', textAlign: 'right', width: 130 }}
+                        />
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
                       {isLocked
-                        ? <span style={{ color: 'var(--text-dim)' }}>{phase.duration_months || 0}</span>
-                        : <EditableInput type="number" step="1" value={phase.duration_months || 0} className={styles.cellInput} style={{ width: '80px' }}
+                        ? <span style={{ color: 'var(--text-dim)', display: 'block', textAlign: 'right' }}>{phase.duration_months || 0}</span>
+                        : <EditableInput type="number" step="1" value={phase.duration_months || 0} className={styles.cellInput} style={{ width: '80px', textAlign: 'right' }}
                             onCommit={v => onUpdatePhaseField(phase.id, 'durationMonths', parseInt(v))} />
                       }
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       {isLocked
-                        ? <span style={{ color: 'var(--text-dim)' }}>{((phase.pos || 0.5) * 100).toFixed(0)}%</span>
-                        : <EditableInput type="number" step="0.01" min="0" max="1" value={phase.pos || 0.5} className={styles.cellInput} style={{ width: '70px' }}
+                        ? <span style={{ color: 'var(--text-dim)', display: 'block', textAlign: 'right' }}>{((phase.pos || 0.5) * 100).toFixed(0)}%</span>
+                        : <EditableInput type="number" step="0.01" min="0" max="1" value={phase.pos || 0.5} className={styles.cellInput} style={{ width: '70px', textAlign: 'right' }}
                             onCommit={v => onUpdatePhaseField(phase.id, 'pos', parseFloat(v))} />
                       }
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       {isLocked
-                        ? <span style={{ color: 'var(--text-dim)' }}>{(phase.internal_cost || 0).toFixed(1)}</span>
-                        : <EditableInput type="number" step="0.1" value={phase.internal_cost || 0} className={styles.cellInput} style={{ width: '90px' }}
+                        ? <span style={{ color: 'var(--text-dim)', display: 'block', textAlign: 'right' }}>{(phase.internal_cost || 0).toFixed(1)}</span>
+                        : <EditableInput type="number" step="0.1" value={phase.internal_cost || 0} className={styles.cellInput} style={{ width: '90px', textAlign: 'right' }}
                             onCommit={v => onUpdatePhaseField(phase.id, 'internalCost', parseFloat(v))} />
                       }
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       {isLocked
-                        ? <span style={{ color: 'var(--text-dim)' }}>{(phase.external_cost || 0).toFixed(1)}</span>
-                        : <EditableInput type="number" step="0.1" value={phase.external_cost || 0} className={styles.cellInput} style={{ width: '90px' }}
+                        ? <span style={{ color: 'var(--text-dim)', display: 'block', textAlign: 'right' }}>{(phase.external_cost || 0).toFixed(1)}</span>
+                        : <EditableInput type="number" step="0.1" value={phase.external_cost || 0} className={styles.cellInput} style={{ width: '90px', textAlign: 'right' }}
                             onCommit={v => onUpdatePhaseField(phase.id, 'externalCost', parseFloat(v))} />
                       }
                     </td>
@@ -3491,7 +3627,7 @@ export default function PpmApp() {
     const [settingsTab, setSettingsTab] = [settingsTabState, setSettingsTabState]
 
     return (
-      <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
+      <div className={`ppm-app ${styles.container} ${theme === 'light' ? styles.light : ''}`}>
         <div className={styles.header}>
           <div className={styles.headerInfo}>
             <h1>Settings</h1>
@@ -3637,7 +3773,7 @@ export default function PpmApp() {
     const projRemCost = getTotalRemainingCost(selectedProject)
 
     return (
-      <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
+      <div className={`ppm-app ${styles.container} ${theme === 'light' ? styles.light : ''}`}>
         {/* Sticky: header + KPI metrics + tab bar */}
         <div className={styles.stickyTop}>
           <div className={styles.header}>
@@ -3758,7 +3894,7 @@ export default function PpmApp() {
 
   // ── Portfolio View ──
   return (
-    <div className={`${styles.container} ${theme === 'light' ? styles.light : ''}`}>
+    <div className={`ppm-app ${styles.container} ${theme === 'light' ? styles.light : ''}`}>
       {/* Single sticky section: header + selector + (when portfolio: KPIs + tabs) */}
       <div className={styles.stickyTop}>
         {/* Header */}
@@ -3988,11 +4124,11 @@ export default function PpmApp() {
           )}
 
           {activeTab === 'timeline' && portfolio.projects && (
-            <TimelineTab projects={portfolio.projects} theme={theme} />
+            <TimelineTab projects={portfolio.projects} theme={theme} onSelectProject={handleSelectProject} />
           )}
 
           {activeTab === 'cash-flow' && portfolio.projects && (
-            <CashFlowRevenueTab projects={portfolio.projects} discountRate={portfolio.discount_rate || 0.1} theme={theme} />
+            <CashFlowRevenueTab projects={portfolio.projects} discountRate={portfolio.discount_rate || 0.1} theme={theme} onSelectProject={handleSelectProject} />
           )}
 
           {activeTab === 'history' && portfolio && (

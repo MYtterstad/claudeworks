@@ -331,6 +331,16 @@
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
+/* Hide number input spinners globally within PPM app */
+:global(.ppm-app) input[type="number"]::-webkit-outer-spin-button,
+:global(.ppm-app) input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+:global(.ppm-app) input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 .calculatedCell {
   font-weight: 700;
   color: var(--accent);
@@ -432,6 +442,7 @@
   font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
   font-size: 0.85rem;
   transition: border-color 0.15s;
+  text-align: right;
 }
 
 .param input:focus,
